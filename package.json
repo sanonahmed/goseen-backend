@@ -4,7 +4,7 @@
   "description": "GoSeen NestJS API — PostgreSQL + Socket.IO + Cloudflare R2",
   "scripts": {
     "prebuild": "node -e \"require('fs').rmSync('dist', {recursive:true, force:true})\"",
-    "build": "nest build",
+    "build": "npx nest build",
     "start": "node dist/main",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
