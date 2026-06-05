@@ -9,6 +9,8 @@ import {
   Query,
 } from '@nestjs/common';
 import { IsEmail, IsString, Length, MinLength } from 'class-validator';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
@@ -48,7 +50,11 @@ class SetupProfileDto {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly jwt: JwtService,
+    private readonly config: ConfigService,
+  ) {}
 
   @Post('send-otp')
   sendOtp(@Body() dto: SendOtpDto) {
@@ -86,6 +92,24 @@ export class AuthController {
   @Get('check-username')
   checkUsername(@Query('username') username: string) {
     return this.auth.checkUsernameAvailable(username).then((available) => ({ available }));
+  }
+
+  // Temporary debug endpoint — remove before ship
+  @Get('debug-token')
+  debugToken(@Request() req: any) {
+    const authHeader = req.headers.authorization as string | undefined;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return { valid: false, reason: 'No Bearer token in Authorization header', header: authHeader ?? null };
+    }
+    const token = authHeader.split(' ')[1];
+    const secret = this.config.get<string>('JWT_ACCESS_SECRET');
+    console.log('[DEBUG] secret present:', !!secret, 'len:', secret?.length);
+    try {
+      const payload = this.jwt.verify(token, { secret });
+      return { valid: true, payload };
+    } catch (e: any) {
+      return { valid: false, reason: e.message, tokenPrefix: token.substring(0, 30) };
+    }
   }
 
   @UseGuards(JwtAuthGuard)
