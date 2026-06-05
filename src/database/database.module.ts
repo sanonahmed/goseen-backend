@@ -11,7 +11,9 @@ export const DB_POOL = 'DB_POOL';
       provide: DB_POOL,
       useFactory: (config: ConfigService) =>
         new Pool({
-          connectionString: config.get<string>('DATABASE_URL'),
+          connectionString:
+            config.get<string>('DATABASE_URL') ??
+            config.get<string>('POSTGRES_URL'),
           ssl:
             config.get('NODE_ENV') === 'production'
               ? { rejectUnauthorized: false }
