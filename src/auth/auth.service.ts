@@ -31,9 +31,11 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
   ) {
+    const port = Number(config.get('SMTP_PORT') ?? 587);
     this.mailer = nodemailer.createTransport({
       host: config.get('SMTP_HOST'),
-      port: Number(config.get('SMTP_PORT') ?? 587),
+      port,
+      secure: port === 465, // SSL for Resend port 465, STARTTLS for 587
       auth: {
         user: config.get('SMTP_USER'),
         pass: config.get('SMTP_PASS'),
