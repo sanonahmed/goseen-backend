@@ -8,6 +8,14 @@ async function bootstrap() {
 
   app.setGlobalPrefix('api/v1');
 
+  // Debug: log every request's auth header so we can verify JWT delivery
+  app.use((req: any, _res: any, next: any) => {
+    const auth = req.headers.authorization;
+    const token = auth?.split(' ')[1];
+    console.log(`[REQ] ${req.method} ${req.path} - auth: ${token ? `present (${token.length} chars)` : 'MISSING'}`);
+    next();
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
