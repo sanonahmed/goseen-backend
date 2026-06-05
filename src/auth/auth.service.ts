@@ -8,7 +8,6 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcryptjs';
-import * as nodemailer from 'nodemailer';
 import { DB_POOL } from '../database/database.module';
 
 interface DbUser {
@@ -24,26 +23,11 @@ interface DbUser {
 
 @Injectable()
 export class AuthService {
-  private mailer: nodemailer.Transporter;
-
   constructor(
     @Inject(DB_POOL) private readonly pool: Pool,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
-  ) {
-    const port = Number(config.get('SMTP_PORT') ?? 587);
-    this.mailer = nodemailer.createTransport({
-      host: config.get('SMTP_HOST'),
-      port,
-      secure: port === 465, // SSL for Resend port 465, STARTTLS for 587
-      connectionTimeout: 10_000,
-      socketTimeout: 15_000,
-      auth: {
-        user: config.get('SMTP_USER'),
-        pass: config.get('SMTP_PASS'),
-      },
-    });
-  }
+  ) {}
 
   async sendOtp(email: string): Promise<void> {
     const otp = Math.floor(100_000 + Math.random() * 900_000).toString();
@@ -57,13 +41,25 @@ export class AuthService {
       [email, otp, expiresAt],
     );
 
-    await this.mailer.sendMail({
-      from: this.config.get('EMAIL_FROM'),
-      to: email,
-      subject: 'Your GoSeen verification code',
-      text: `Your code is ${otp}. It expires in 10 minutes.`,
-      html: `<p>Your GoSeen code: <strong>${otp}</strong></p><p>Expires in 10 minutes.</p>`,
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.config.get('SMTP_PASS')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: this.config.get('EMAIL_FROM'),
+        to: [email],
+        subject: 'Your GoSeen verification code',
+        text: `Your code is ${otp}. It expires in 10 minutes.`,
+        html: `<p>Your GoSeen code: <strong>${otp}</strong></p><p>Expires in 10 minutes.</p>`,
+      }),
     });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Email delivery failed (${res.status}): ${body}`);
+    }
   }
 
   async verifyOtp(email: string, otp: string) {
