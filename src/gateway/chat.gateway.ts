@@ -264,10 +264,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     message: any,
   ) {
     const { rows: members } = await this.pool.query(
-      `SELECT cm.user_id, u.display_name AS sender_name
+      `SELECT cm.user_id
        FROM chat_members cm
-       CROSS JOIN users sender ON sender.id = $2
-       JOIN users u ON u.id = cm.user_id
        WHERE cm.chat_id = $1 AND cm.user_id != $2`,
       [chatId, senderId],
     );

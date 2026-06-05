@@ -33,7 +33,8 @@ export class MessagesService {
     await this.chats.assertMember(chatId, userId);
 
     let timeClause = '';
-    const params: unknown[] = [chatId, limit];
+    // params: $1=chatId, $2=limit, $3=userId, $4=beforeCursor (optional)
+    const queryParams: unknown[] = [chatId, limit, userId];
 
     if (beforeId) {
       const { rows } = await this.pool.query(
@@ -41,8 +42,8 @@ export class MessagesService {
         [beforeId],
       );
       if (rows[0]) {
-        params.push(rows[0].created_at);
-        timeClause = `AND m.created_at < $${params.length}`;
+        queryParams.push(rows[0].created_at);
+        timeClause = `AND m.created_at < $4`;
       }
     }
 
@@ -84,7 +85,7 @@ export class MessagesService {
        GROUP BY m.id, u.display_name, u.avatar_url, rm.text
        ORDER BY m.created_at DESC
        LIMIT $2`,
-      beforeId ? [chatId, limit, userId, params[2]] : [chatId, limit, userId],
+      queryParams,
     );
     return rows;
   }
