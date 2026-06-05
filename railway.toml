@@ -1,0 +1,10 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+# Run migration (idempotent — uses CREATE TABLE IF NOT EXISTS) then start API
+startCommand = "node dist/database/run-migration && node dist/main"
+healthcheckPath = "/api/v1/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

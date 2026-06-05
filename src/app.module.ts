@@ -1,0 +1,27 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { DatabaseModule } from './database/database.module';
+import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
+import { ChatsModule } from './chats/chats.module';
+import { MessagesModule } from './messages/messages.module';
+import { MediaModule } from './media/media.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { GatewayModule } from './gateway/gateway.module';
+import { HealthController } from './health/health.controller';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    DatabaseModule,
+    AuthModule,
+    UsersModule,
+    ChatsModule,
+    MessagesModule,
+    MediaModule,
+    NotificationsModule,
+    GatewayModule,
+  ],
+  controllers: [HealthController],
+})
+export class AppModule {}
