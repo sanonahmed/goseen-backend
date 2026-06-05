@@ -36,6 +36,8 @@ export class AuthService {
       host: config.get('SMTP_HOST'),
       port,
       secure: port === 465, // SSL for Resend port 465, STARTTLS for 587
+      connectionTimeout: 10_000,
+      socketTimeout: 15_000,
       auth: {
         user: config.get('SMTP_USER'),
         pass: config.get('SMTP_PASS'),
