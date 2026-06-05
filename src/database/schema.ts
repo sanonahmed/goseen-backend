@@ -1,3 +1,16 @@
+export const DROP_SCHEMA = `
+DROP TABLE IF EXISTS connections        CASCADE;
+DROP TABLE IF EXISTS notifications      CASCADE;
+DROP TABLE IF EXISTS media_files        CASCADE;
+DROP TABLE IF EXISTS message_reactions  CASCADE;
+DROP TABLE IF EXISTS message_status     CASCADE;
+DROP TABLE IF EXISTS messages           CASCADE;
+DROP TABLE IF EXISTS chat_members       CASCADE;
+DROP TABLE IF EXISTS chats              CASCADE;
+DROP TABLE IF EXISTS users              CASCADE;
+DROP FUNCTION IF EXISTS set_updated_at  CASCADE;
+`;
+
 // Auto-imported by run-migration.ts — compiles into dist so no file copying needed.
 export const INITIAL_SCHEMA = `
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
