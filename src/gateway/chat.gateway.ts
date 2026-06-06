@@ -29,6 +29,12 @@ export const SE = {
   TYPING:      'typing',
   STOP_TYPING: 'stop_typing',
   MARK_SEEN:   'mark_seen',
+  // Client → Server: call signaling
+  CALL_INVITE:  'call_invite',
+  CALL_CANCEL:  'call_cancel',
+  CALL_ANSWER:  'call_answer',
+  CALL_REJECT:  'call_reject',
+  CALL_END:     'call_end',
   // Server → Client
   NEW_MSG:          'new_message',
   MSG_UPDATED:      'message_updated',
@@ -40,6 +46,12 @@ export const SE = {
   MSG_SEEN:         'message_seen',
   NEW_NOTIFICATION: 'new_notification',
   DELIVERED:        'delivered',
+  // Server → Client: call signaling
+  INCOMING_CALL:   'incoming_call',
+  CALL_ACCEPTED:   'call_accepted',
+  CALL_REJECTED:   'call_rejected',
+  CALL_CANCELLED:  'call_cancelled',
+  CALL_ENDED:      'call_ended',
 } as const;
 
 @WebSocketGateway({
@@ -53,6 +65,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // userId → Set<socketId>  (one user can have multiple tabs/devices)
   private readonly userSockets = new Map<string, Set<string>>();
+
+  // channelName → { callerId, calleeId }  — cleared when call ends/is rejected/cancelled
+  private readonly callSessions = new Map<string, { callerId: string; calleeId: string }>();
 
   constructor(
     private readonly jwt: JwtService,
@@ -86,7 +101,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Only broadcast offline when last device disconnects
     if (!this.userSockets.get(userId)?.size) {
       await this.users.setOnlineStatus(userId, false);
-      this.broadcastPresence(userId, false);
+      // Fetch the timestamp that was just written so the client gets the exact value.
+      const lastSeen = await this.users.getLastSeen(userId);
+      this.broadcastPresence(userId, false, lastSeen);
     }
   }
 
@@ -203,6 +220,76 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  // ── Call signaling ────────────────────────────────────────────────────────
+
+  @SubscribeMessage(SE.CALL_INVITE)
+  onCallInvite(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody()
+    data: {
+      targetUserId: string;
+      channelName: string;
+      callerName: string;
+      callerAvatar?: string;
+      callType: string;
+    },
+  ) {
+    const callerId = socket.data.userId as string;
+    this.callSessions.set(data.channelName, { callerId, calleeId: data.targetUserId });
+    this.emitToUser(data.targetUserId, SE.INCOMING_CALL, {
+      callerId,
+      callerName: data.callerName,
+      callerAvatar: data.callerAvatar ?? null,
+      channelName: data.channelName,
+      callType: data.callType,
+    });
+  }
+
+  @SubscribeMessage(SE.CALL_ANSWER)
+  onCallAnswer(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() data: { channelName: string },
+  ) {
+    const session = this.callSessions.get(data.channelName);
+    if (!session) return;
+    this.emitToUser(session.callerId, SE.CALL_ACCEPTED, { channelName: data.channelName });
+  }
+
+  @SubscribeMessage(SE.CALL_REJECT)
+  onCallReject(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() data: { channelName: string },
+  ) {
+    const session = this.callSessions.get(data.channelName);
+    if (!session) return;
+    this.emitToUser(session.callerId, SE.CALL_REJECTED, { channelName: data.channelName });
+    this.callSessions.delete(data.channelName);
+  }
+
+  @SubscribeMessage(SE.CALL_CANCEL)
+  onCallCancel(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() data: { channelName: string },
+  ) {
+    const session = this.callSessions.get(data.channelName);
+    if (!session) return;
+    this.emitToUser(session.calleeId, SE.CALL_CANCELLED, { channelName: data.channelName });
+    this.callSessions.delete(data.channelName);
+  }
+
+  @SubscribeMessage(SE.CALL_END)
+  onCallEnd(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() data: { channelName: string },
+  ) {
+    const session = this.callSessions.get(data.channelName);
+    if (!session) return;
+    const enderId = socket.data.userId as string;
+    const otherId = enderId === session.callerId ? session.calleeId : session.callerId;
+    this.emitToUser(otherId, SE.CALL_ENDED, { channelName: data.channelName });
+    this.callSessions.delete(data.channelName);
+  }
+
   // ── Server-initiated push ─────────────────────────────────────────────────
 
   /** Push an event to a specific user across all their connected sockets. */
@@ -251,11 +338,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.userSockets.get(userId)?.delete(socketId);
   }
 
-  private broadcastPresence(userId: string, isOnline: boolean) {
+  private broadcastPresence(userId: string, isOnline: boolean, lastSeen?: Date) {
     const event = isOnline ? SE.USER_ONLINE : SE.USER_OFFLINE;
-    // Broadcast to all sockets in rooms where this user is a member
-    // Simple approach: broadcast globally; clients filter by contact list
-    this.server.emit(event, { userId });
+    this.server.emit(event, {
+      userId,
+      ...(lastSeen && { last_seen: lastSeen.toISOString() }),
+    });
   }
 
   private async notifyOfflineMembers(
