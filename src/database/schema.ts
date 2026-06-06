@@ -1,6 +1,22 @@
 // Incremental migrations — each entry is idempotent and runs on every deploy.
 export const MIGRATIONS: string[] = [
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT`,
+
+  `CREATE TABLE IF NOT EXISTS call_logs (
+    id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    channel_name     TEXT        NOT NULL UNIQUE,
+    caller_id        UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    callee_id        UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    call_type        VARCHAR(10) NOT NULL,
+    status           VARCHAR(20) NOT NULL,
+    duration_seconds INT,
+    started_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    answered_at      TIMESTAMPTZ,
+    ended_at         TIMESTAMPTZ
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_call_logs_caller ON call_logs (caller_id, started_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_call_logs_callee ON call_logs (callee_id, started_at DESC)`,
 ];
 
 export const DROP_SCHEMA = `

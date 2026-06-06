@@ -19,6 +19,7 @@ import { ChatsService } from '../chats/chats.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
 import { FcmService } from '../fcm/fcm.service';
+import { CallSessionStore } from '../call/call-session.store';
 
 // ── Socket event constants ────────────────────────────────────────────────────
 // Must match lib/core/network/socket_service.dart in Flutter
@@ -67,9 +68,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // userId → Set<socketId>  (one user can have multiple tabs/devices)
   private readonly userSockets = new Map<string, Set<string>>();
 
-  // channelName → { callerId, calleeId }  — cleared when call ends/is rejected/cancelled
-  private readonly callSessions = new Map<string, { callerId: string; calleeId: string }>();
-
   constructor(
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
@@ -79,6 +77,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly notifications: NotificationsService,
     private readonly users: UsersService,
     private readonly fcm: FcmService,
+    private readonly callSessions: CallSessionStore,
   ) {}
 
   // ── Connection lifecycle ───────────────────────────────────────────────────
@@ -238,8 +237,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const callerId = socket.data.userId as string;
     const calleeOnline = (this.userSockets.get(data.targetUserId)?.size ?? 0) > 0;
-    console.log(`[Call] call_invite from=${callerId} to=${data.targetUserId} online=${calleeOnline} channel=${data.channelName}`);
-    this.callSessions.set(data.channelName, { callerId, calleeId: data.targetUserId });
+    console.log(`[Call/WS] invite from=${callerId} to=${data.targetUserId} online=${calleeOnline} channel=${data.channelName}`);
+
+    this.callSessions.set(data.channelName, {
+      callerId,
+      calleeId: data.targetUserId,
+      callType: data.callType,
+      callerName: data.callerName,
+      status: 'ringing',
+      startedAt: new Date(),
+    });
 
     const invitePayload = {
       callerId,
@@ -249,10 +256,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       callType: data.callType,
     };
 
-    // Always emit via socket (works when callee is connected).
     this.emitToUser(data.targetUserId, SE.INCOMING_CALL, invitePayload);
-
-    // Always also send FCM so the app wakes when backgrounded/killed.
     await this.fcm.notifyCallEvent(data.targetUserId, 'call_invite', {
       callerId,
       callerName: data.callerName,
@@ -269,6 +273,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     const session = this.callSessions.get(data.channelName);
     if (!session) return;
+    this.callSessions.markActive(data.channelName);
     this.emitToUser(session.callerId, SE.CALL_ACCEPTED, { channelName: data.channelName });
   }
 
@@ -277,10 +282,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() socket: Socket,
     @MessageBody() data: { channelName: string },
   ) {
-    const session = this.callSessions.get(data.channelName);
+    const session = this.callSessions.delete(data.channelName);
     if (!session) return;
     this.emitToUser(session.callerId, SE.CALL_REJECTED, { channelName: data.channelName });
-    this.callSessions.delete(data.channelName);
   }
 
   @SubscribeMessage(SE.CALL_CANCEL)
@@ -288,10 +292,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() socket: Socket,
     @MessageBody() data: { channelName: string },
   ) {
-    const session = this.callSessions.get(data.channelName);
+    const session = this.callSessions.delete(data.channelName);
     if (!session) return;
     this.emitToUser(session.calleeId, SE.CALL_CANCELLED, { channelName: data.channelName });
-    this.callSessions.delete(data.channelName);
   }
 
   @SubscribeMessage(SE.CALL_END)
@@ -299,12 +302,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() socket: Socket,
     @MessageBody() data: { channelName: string },
   ) {
-    const session = this.callSessions.get(data.channelName);
+    const session = this.callSessions.delete(data.channelName);
     if (!session) return;
     const enderId = socket.data.userId as string;
     const otherId = enderId === session.callerId ? session.calleeId : session.callerId;
     this.emitToUser(otherId, SE.CALL_ENDED, { channelName: data.channelName });
-    this.callSessions.delete(data.channelName);
   }
 
   // ── Server-initiated push ─────────────────────────────────────────────────

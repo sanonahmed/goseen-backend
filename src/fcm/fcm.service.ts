@@ -55,36 +55,53 @@ export class FcmService implements OnModuleInit {
       const token = rows[0]?.fcm_token;
       if (!token) return;
 
-      // Only call_invite needs a visible notification banner to wake the callee.
-      // All other call events (accept/reject/cancel/end) are data-only so the
-      // app processes them silently without requiring a notification tap.
+      // call_invite  → visible notification to wake/alert the callee.
+      // missed_call  → visible persistent notification in the callee's tray.
+      // everything else → data-only so the app handles it silently.
       const isInvite = type === 'call_invite';
+      const isMissed = type === 'missed_call';
       const inviteTitle = `${data['callerName'] ?? 'Someone'} is calling`;
       const inviteBody =
         data['callType'] === 'video' ? 'Incoming video call' : 'Incoming voice call';
+      const missedTitle = `Missed ${data['callType'] === 'video' ? 'video' : 'voice'} call`;
+      const missedBody  = `${data['callerName'] ?? 'Someone'} called`;
 
       await admin.messaging().send({
         token,
         data: { type, ...data },
         ...(isInvite
           ? {
-              notification: { title: inviteTitle, body: inviteBody },
-              android: {
-                priority: 'high',
-                notification: {
-                  channelId: 'goseen_calls',
-                  sound: 'default',
-                  priority: 'max',
-                  defaultVibrateTimings: true,
-                },
-              },
+              // Android: data-only high-priority wake — our Flutter background handler
+              // shows a full-screen local notification with Accept/Decline buttons.
+              // iOS: visible via APS alert so the system shows it on the lock screen
+              // until CallKit (Phase 3.2) replaces this path entirely.
+              android: { priority: 'high' },
               apns: {
                 headers: { 'apns-priority': '10' },
-                payload: { aps: { sound: 'default', contentAvailable: true } },
+                payload: {
+                  aps: {
+                    alert: { title: inviteTitle, body: inviteBody },
+                    sound: 'default',
+                    contentAvailable: true,
+                  },
+                },
+              },
+            }
+          : isMissed
+          ? {
+              // Missed call: visible persistent notification, no sound.
+              notification: { title: missedTitle, body: missedBody },
+              android: {
+                priority: 'high',
+                notification: { channelId: 'goseen_calls' },
+              },
+              apns: {
+                headers: { 'apns-priority': '5' },
+                payload: { aps: { contentAvailable: true } },
               },
             }
           : {
-              // Data-only: high priority so Android wakes the app in background
+              // All other call events: data-only, high priority to wake background app.
               android: { priority: 'high' },
               apns: {
                 headers: { 'apns-priority': '10' },

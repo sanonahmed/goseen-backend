@@ -5,6 +5,7 @@ import { ChatsModule } from '../chats/chats.module';
 import { MessagesModule } from '../messages/messages.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
+import { CallSessionStore } from '../call/call-session.store';
 
 @Module({
   imports: [
@@ -14,7 +15,7 @@ import { UsersModule } from '../users/users.module';
     NotificationsModule,
     UsersModule,
   ],
-  providers: [ChatGateway],
-  exports: [ChatGateway],
+  providers: [ChatGateway, CallSessionStore],
+  exports: [ChatGateway, CallSessionStore],
 })
 export class GatewayModule {}
