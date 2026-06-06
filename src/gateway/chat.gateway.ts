@@ -253,10 +253,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.emitToUser(data.targetUserId, SE.INCOMING_CALL, invitePayload);
 
     // Always also send FCM so the app wakes when backgrounded/killed.
-    await this.fcm.notifyCallInvite(data.targetUserId, {
+    await this.fcm.notifyCallEvent(data.targetUserId, 'call_invite', {
       callerId,
       callerName: data.callerName,
-      callerAvatar: data.callerAvatar,
+      callerAvatar: data.callerAvatar ?? '',
       channelName: data.channelName,
       callType: data.callType,
     });

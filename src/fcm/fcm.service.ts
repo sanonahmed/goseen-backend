@@ -37,45 +37,48 @@ export class FcmService implements OnModuleInit {
   }
 
   /**
-   * Send a high-priority FCM call invite to a single user.
-   * Wakes the app even when backgrounded/killed. Fire-and-forget.
+   * Send a high-priority FCM call signaling event to a single user.
+   * type: 'call_invite' | 'call_cancel' | 'call_accept' | 'call_reject' | 'call_end'
+   * Fire-and-forget.
    */
-  async notifyCallInvite(
-    calleeId: string,
-    payload: {
-      callerId: string;
-      callerName: string;
-      callerAvatar?: string | null;
-      channelName: string;
-      callType: string;
-    },
+  async notifyCallEvent(
+    userId: string,
+    type: string,
+    data: Record<string, string>,
   ): Promise<void> {
     if (!this.ready) return;
     try {
       const { rows } = await this.pool.query<{ fcm_token: string | null }>(
         `SELECT fcm_token FROM users WHERE id = $1`,
-        [calleeId],
+        [userId],
       );
       const token = rows[0]?.fcm_token;
       if (!token) return;
 
+      const notifTitle =
+        type === 'call_invite'
+          ? `${data['callerName'] ?? 'Someone'} is calling`
+          : type === 'call_accept'
+            ? 'Call accepted'
+            : type === 'call_reject'
+              ? 'Call declined'
+              : type === 'call_cancel'
+                ? 'Call cancelled'
+                : 'Call ended';
+
+      const notifBody =
+        type === 'call_invite'
+          ? data['callType'] === 'video'
+            ? 'Incoming video call'
+            : 'Incoming voice call'
+          : '';
+
       await admin.messaging().send({
         token,
-        notification: {
-          title: `${payload.callerName} is calling`,
-          body:
-            payload.callType === 'video'
-              ? 'Incoming video call'
-              : 'Incoming voice call',
-        },
-        data: {
-          type: 'call_invite',
-          callerId: payload.callerId,
-          callerName: payload.callerName,
-          callerAvatar: payload.callerAvatar ?? '',
-          channelName: payload.channelName,
-          callType: payload.callType,
-        },
+        ...(notifBody
+          ? { notification: { title: notifTitle, body: notifBody } }
+          : { notification: { title: notifTitle } }),
+        data: { type, ...data },
         android: {
           priority: 'high',
           notification: {
@@ -91,7 +94,7 @@ export class FcmService implements OnModuleInit {
         },
       });
     } catch (err) {
-      this.logger.error('FCM call invite failed', err);
+      this.logger.error(`FCM ${type} failed`, err);
     }
   }
 
