@@ -7,6 +7,7 @@ import {
 import { Pool } from 'pg';
 import { DB_POOL } from '../database/database.module';
 import { ChatsService } from '../chats/chats.service';
+import { FcmService } from '../fcm/fcm.service';
 
 export interface SendMessageDto {
   text?: string;
@@ -22,6 +23,7 @@ export class MessagesService {
   constructor(
     @Inject(DB_POOL) private readonly pool: Pool,
     private readonly chats: ChatsService,
+    private readonly fcm: FcmService,
   ) {}
 
   async getMessages(
@@ -115,6 +117,13 @@ export class MessagesService {
 
     // Fetch with sender info
     const full = await this.getMessageById(msg.id, senderId);
+
+    // Fire-and-forget FCM push to all other chat members.
+    this.fcm.notifyMessageRecipients(chatId, senderId, {
+      title: full.sender_name ?? 'New message',
+      body: full.text ?? '📎 Media',
+    }).catch(() => {});
+
     return full;
   }
 

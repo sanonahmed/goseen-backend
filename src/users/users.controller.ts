@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Request,
+  HttpCode,
 } from '@nestjs/common';
 import { IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -20,6 +21,10 @@ class UpdateMeDto {
   @IsOptional() @IsString() avatar_url?: string;
 }
 
+class FcmTokenDto {
+  @IsString() token!: string;
+}
+
 @UseGuards(JwtAuthGuard)
 @Controller('users')
 export class UsersController {
@@ -28,6 +33,12 @@ export class UsersController {
   @Get('me')
   getMe(@Request() req: any) {
     return this.users.getMe(req.user.id);
+  }
+
+  @Post('fcm-token')
+  @HttpCode(204)
+  saveFcmToken(@Request() req: any, @Body() dto: FcmTokenDto) {
+    return this.users.saveFcmToken(req.user.id, dto.token);
   }
 
   @Patch('me')

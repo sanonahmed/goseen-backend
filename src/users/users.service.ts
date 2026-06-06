@@ -66,6 +66,13 @@ export class UsersService {
     return rows[0];
   }
 
+  async saveFcmToken(userId: string, token: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE users SET fcm_token = $1 WHERE id = $2',
+      [token, userId],
+    );
+  }
+
   async setOnlineStatus(userId: string, isOnline: boolean): Promise<void> {
     await this.pool.query(
       'UPDATE users SET is_online = $1, last_seen = NOW() WHERE id = $2',

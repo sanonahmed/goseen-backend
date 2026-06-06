@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
-import { INITIAL_SCHEMA, DROP_SCHEMA } from './schema';
+import { INITIAL_SCHEMA, DROP_SCHEMA, MIGRATIONS } from './schema';
 
 dotenv.config(); // no-op on Railway (env already set), needed for local dev
 
@@ -47,6 +47,9 @@ export async function runMigration() {
     }
 
     await pool.query(INITIAL_SCHEMA);
+    for (const sql of MIGRATIONS) {
+      await pool.query(sql);
+    }
     console.log('[migration] Schema applied successfully');
   } catch (err) {
     console.error('[migration] Failed:', err);

@@ -8,6 +8,7 @@ import { MessagesModule } from './messages/messages.module';
 import { MediaModule } from './media/media.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { GatewayModule } from './gateway/gateway.module';
+import { FcmModule } from './fcm/fcm.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -21,6 +22,7 @@ import { HealthController } from './health/health.controller';
     MediaModule,
     NotificationsModule,
     GatewayModule,
+    FcmModule,
   ],
   controllers: [HealthController],
 })

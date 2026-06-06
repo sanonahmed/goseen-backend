@@ -1,3 +1,8 @@
+// Incremental migrations — each entry is idempotent and runs on every deploy.
+export const MIGRATIONS: string[] = [
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT`,
+];
+
 export const DROP_SCHEMA = `
 DROP TABLE IF EXISTS connections        CASCADE;
 DROP TABLE IF EXISTS notifications      CASCADE;
@@ -27,6 +32,7 @@ CREATE TABLE IF NOT EXISTS users (
   otp_code           VARCHAR(6),
   otp_expires_at     TIMESTAMPTZ,
   refresh_token_hash TEXT,
+  fcm_token          TEXT,
   created_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
