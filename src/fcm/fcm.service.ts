@@ -55,43 +55,42 @@ export class FcmService implements OnModuleInit {
       const token = rows[0]?.fcm_token;
       if (!token) return;
 
-      const notifTitle =
-        type === 'call_invite'
-          ? `${data['callerName'] ?? 'Someone'} is calling`
-          : type === 'call_accept'
-            ? 'Call accepted'
-            : type === 'call_reject'
-              ? 'Call declined'
-              : type === 'call_cancel'
-                ? 'Call cancelled'
-                : 'Call ended';
-
-      const notifBody =
-        type === 'call_invite'
-          ? data['callType'] === 'video'
-            ? 'Incoming video call'
-            : 'Incoming voice call'
-          : '';
+      // Only call_invite needs a visible notification banner to wake the callee.
+      // All other call events (accept/reject/cancel/end) are data-only so the
+      // app processes them silently without requiring a notification tap.
+      const isInvite = type === 'call_invite';
+      const inviteTitle = `${data['callerName'] ?? 'Someone'} is calling`;
+      const inviteBody =
+        data['callType'] === 'video' ? 'Incoming video call' : 'Incoming voice call';
 
       await admin.messaging().send({
         token,
-        ...(notifBody
-          ? { notification: { title: notifTitle, body: notifBody } }
-          : { notification: { title: notifTitle } }),
         data: { type, ...data },
-        android: {
-          priority: 'high',
-          notification: {
-            channelId: 'goseen_calls',
-            sound: 'default',
-            priority: 'max',
-            defaultVibrateTimings: true,
-          },
-        },
-        apns: {
-          headers: { 'apns-priority': '10' },
-          payload: { aps: { sound: 'default', contentAvailable: true } },
-        },
+        ...(isInvite
+          ? {
+              notification: { title: inviteTitle, body: inviteBody },
+              android: {
+                priority: 'high',
+                notification: {
+                  channelId: 'goseen_calls',
+                  sound: 'default',
+                  priority: 'max',
+                  defaultVibrateTimings: true,
+                },
+              },
+              apns: {
+                headers: { 'apns-priority': '10' },
+                payload: { aps: { sound: 'default', contentAvailable: true } },
+              },
+            }
+          : {
+              // Data-only: high priority so Android wakes the app in background
+              android: { priority: 'high' },
+              apns: {
+                headers: { 'apns-priority': '10' },
+                payload: { aps: { contentAvailable: true } },
+              },
+            }),
       });
     } catch (err) {
       this.logger.error(`FCM ${type} failed`, err);

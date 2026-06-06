@@ -14,7 +14,11 @@ interface AuthedRequest extends Request {
   user: { id: string; email: string };
 }
 
-/** In-memory call sessions: channelName → { callerId, calleeId } */
+/**
+ * In-memory session cache: channelName → { callerId, calleeId }.
+ * Used as a fallback only — clients always send the target user ID directly
+ * so signaling works even if the session was lost on a server restart.
+ */
 const sessions = new Map<string, { callerId: string; calleeId: string }>();
 
 @Controller('call')
@@ -46,7 +50,7 @@ export class CallController {
     const payload = {
       callerId,
       callerName: body.callerName,
-      callerAvatar: body.callerAvatar ?? null,
+      callerAvatar: body.callerAvatar ?? '',
       channelName: body.channelName,
       callType: body.callType,
     };
@@ -72,80 +76,110 @@ export class CallController {
   @Post('cancel')
   async cancel(
     @Req() req: AuthedRequest,
-    @Body() body: { channelName: string },
+    // calleeId sent by client so we don't rely on server-side session state
+    @Body() body: { channelName: string; calleeId?: string },
   ) {
-    const session = sessions.get(body.channelName);
-    if (!session) return { ok: true };
+    const calleeId =
+      body.calleeId ?? sessions.get(body.channelName)?.calleeId;
 
-    this.gateway.emitToUser(session.calleeId, SE.CALL_CANCELLED, {
+    if (!calleeId) {
+      console.warn(`[Call/HTTP] cancel – no session for channel=${body.channelName}`);
+      return { ok: true };
+    }
+
+    this.gateway.emitToUser(calleeId, SE.CALL_CANCELLED, {
       channelName: body.channelName,
     });
-    await this.fcm.notifyCallEvent(session.calleeId, 'call_cancel', {
+    await this.fcm.notifyCallEvent(calleeId, 'call_cancel', {
       channelName: body.channelName,
     });
 
     sessions.delete(body.channelName);
-    console.log(`[Call/HTTP] cancel channel=${body.channelName}`);
+    console.log(`[Call/HTTP] cancel channel=${body.channelName} callee=${calleeId}`);
     return { ok: true };
   }
 
   @Post('answer')
   async answer(
     @Req() req: AuthedRequest,
-    @Body() body: { channelName: string },
+    // callerId sent by client so we don't rely on server-side session state
+    @Body() body: { channelName: string; callerId?: string },
   ) {
-    const session = sessions.get(body.channelName);
-    if (!session) return { ok: true };
+    const callerId =
+      body.callerId ?? sessions.get(body.channelName)?.callerId;
 
-    this.gateway.emitToUser(session.callerId, SE.CALL_ACCEPTED, {
+    if (!callerId) {
+      console.warn(`[Call/HTTP] answer – no session for channel=${body.channelName}`);
+      return { ok: true };
+    }
+
+    this.gateway.emitToUser(callerId, SE.CALL_ACCEPTED, {
       channelName: body.channelName,
     });
-    await this.fcm.notifyCallEvent(session.callerId, 'call_accept', {
+    await this.fcm.notifyCallEvent(callerId, 'call_accept', {
       channelName: body.channelName,
     });
 
-    console.log(`[Call/HTTP] answer channel=${body.channelName}`);
+    console.log(`[Call/HTTP] answer channel=${body.channelName} caller=${callerId}`);
     return { ok: true };
   }
 
   @Post('reject')
   async reject(
     @Req() req: AuthedRequest,
-    @Body() body: { channelName: string },
+    // callerId sent by client so we don't rely on server-side session state
+    @Body() body: { channelName: string; callerId?: string },
   ) {
-    const session = sessions.get(body.channelName);
-    if (!session) return { ok: true };
+    const callerId =
+      body.callerId ?? sessions.get(body.channelName)?.callerId;
 
-    this.gateway.emitToUser(session.callerId, SE.CALL_REJECTED, {
+    if (!callerId) {
+      console.warn(`[Call/HTTP] reject – no session for channel=${body.channelName}`);
+      return { ok: true };
+    }
+
+    this.gateway.emitToUser(callerId, SE.CALL_REJECTED, {
       channelName: body.channelName,
     });
-    await this.fcm.notifyCallEvent(session.callerId, 'call_reject', {
+    await this.fcm.notifyCallEvent(callerId, 'call_reject', {
       channelName: body.channelName,
     });
 
     sessions.delete(body.channelName);
-    console.log(`[Call/HTTP] reject channel=${body.channelName}`);
+    console.log(`[Call/HTTP] reject channel=${body.channelName} caller=${callerId}`);
     return { ok: true };
   }
 
   @Post('end')
-  async end(@Req() req: AuthedRequest, @Body() body: { channelName: string }) {
-    const session = sessions.get(body.channelName);
-    if (!session) return { ok: true };
-
+  async end(
+    @Req() req: AuthedRequest,
+    // otherUserId sent by client so we don't rely on server-side session state
+    @Body() body: { channelName: string; otherUserId?: string },
+  ) {
     const enderId = req.user.id;
-    const otherId =
-      enderId === session.callerId ? session.calleeId : session.callerId;
+    let otherId = body.otherUserId;
 
-    this.gateway.emitToUser(otherId, SE.CALL_ENDED, {
-      channelName: body.channelName,
-    });
-    await this.fcm.notifyCallEvent(otherId, 'call_end', {
-      channelName: body.channelName,
-    });
+    if (!otherId) {
+      const session = sessions.get(body.channelName);
+      if (session) {
+        otherId =
+          enderId === session.callerId ? session.calleeId : session.callerId;
+      }
+    }
+
+    if (otherId) {
+      this.gateway.emitToUser(otherId, SE.CALL_ENDED, {
+        channelName: body.channelName,
+      });
+      await this.fcm.notifyCallEvent(otherId, 'call_end', {
+        channelName: body.channelName,
+      });
+    } else {
+      console.warn(`[Call/HTTP] end – no session for channel=${body.channelName}`);
+    }
 
     sessions.delete(body.channelName);
-    console.log(`[Call/HTTP] end channel=${body.channelName}`);
+    console.log(`[Call/HTTP] end channel=${body.channelName} ender=${enderId} other=${otherId}`);
     return { ok: true };
   }
 }
