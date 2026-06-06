@@ -80,6 +80,14 @@ export class UsersService {
     );
   }
 
+  async getLastSeen(userId: string): Promise<Date | undefined> {
+    const { rows } = await this.pool.query(
+      'SELECT last_seen FROM users WHERE id = $1',
+      [userId],
+    );
+    return rows[0]?.last_seen as Date | undefined;
+  }
+
   async getOnlineUsers(userIds: string[]) {
     if (userIds.length === 0) return [];
     const placeholders = userIds.map((_, i) => `$${i + 1}`).join(', ');

@@ -36,7 +36,9 @@ export class ChatsService {
          CASE
            WHEN c.type = 'personal' THEN other.is_online
            ELSE FALSE
-         END AS is_online
+         END AS is_online,
+         other.id        AS peer_id,
+         other.last_seen AS last_seen
        FROM chat_members cm
        JOIN chats c ON c.id = cm.chat_id
        -- For personal chats, get the other participant
