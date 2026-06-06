@@ -9,6 +9,7 @@ import { MediaModule } from './media/media.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { FcmModule } from './fcm/fcm.module';
+import { AgoraModule } from './agora/agora.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -23,6 +24,7 @@ import { HealthController } from './health/health.controller';
     NotificationsModule,
     GatewayModule,
     FcmModule,
+    AgoraModule,
   ],
   controllers: [HealthController],
 })
