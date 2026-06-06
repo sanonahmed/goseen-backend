@@ -267,7 +267,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage(SE.CALL_ANSWER)
-  onCallAnswer(
+  async onCallAnswer(
     @ConnectedSocket() socket: Socket,
     @MessageBody() data: { channelName: string; callerId?: string },
   ) {
@@ -277,10 +277,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // in the payload (resilient against backend restarts losing in-memory state).
     const callerId = session?.callerId ?? data.callerId;
 
+    const callerSocketCount = this.userSockets.get(callerId ?? '')?.size ?? 0;
     console.log(
       `[Call/WS] call_answer channel=${data.channelName} callee=${calleeId}` +
       ` session=${session ? 'found' : 'MISSING'} callerId=${callerId ?? 'unknown'}` +
-      ` callerSockets=${this.userSockets.get(callerId ?? '')?.size ?? 0}`,
+      ` callerSockets=${callerSocketCount}`,
     );
 
     if (!callerId) {
@@ -290,8 +291,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     if (session) this.callSessions.markActive(data.channelName);
 
+    // Always emit via socket — fast path.
     this.emitToUser(callerId, SE.CALL_ACCEPTED, { channelName: data.channelName });
-    console.log(`[Call/WS] call_accepted emitted to callerId=${callerId}`);
+    console.log(`[Call/WS] call_accepted socket emitted to callerId=${callerId} (sockets=${callerSocketCount})`);
+
+    // FCM backup: ensures delivery even if caller's socket briefly loses
+    // its tracking entry (Railway proxy reconnect, pod restart, etc.).
+    await this.fcm.notifyCallEvent(callerId, 'call_accept', {
+      channelName: data.channelName,
+    });
   }
 
   @SubscribeMessage(SE.CALL_REJECT)
