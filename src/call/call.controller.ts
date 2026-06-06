@@ -232,6 +232,16 @@ export class CallController implements OnModuleInit {
     return { ok: true };
   }
 
+  // ── call status (polling fallback for callee-answered detection) ─────────
+
+  @Get('status')
+  getStatus(@Query('channelName') channelName: string) {
+    if (!channelName) return { status: 'not_found' };
+    const session = this.sessions.get(channelName);
+    if (!session) return { status: 'not_found' };
+    return { status: session.status };
+  }
+
   // ── Step 4.6: recent call logs ────────────────────────────────────────────
 
   @Get('logs')
