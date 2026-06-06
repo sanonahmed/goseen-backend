@@ -269,12 +269,29 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage(SE.CALL_ANSWER)
   onCallAnswer(
     @ConnectedSocket() socket: Socket,
-    @MessageBody() data: { channelName: string },
+    @MessageBody() data: { channelName: string; callerId?: string },
   ) {
-    const session = this.callSessions.get(data.channelName);
-    if (!session) return;
-    this.callSessions.markActive(data.channelName);
-    this.emitToUser(session.callerId, SE.CALL_ACCEPTED, { channelName: data.channelName });
+    const calleeId = socket.data.userId as string;
+    const session  = this.callSessions.get(data.channelName);
+    // Use session callerId first; fall back to the callerId the callee sent
+    // in the payload (resilient against backend restarts losing in-memory state).
+    const callerId = session?.callerId ?? data.callerId;
+
+    console.log(
+      `[Call/WS] call_answer channel=${data.channelName} callee=${calleeId}` +
+      ` session=${session ? 'found' : 'MISSING'} callerId=${callerId ?? 'unknown'}` +
+      ` callerSockets=${this.userSockets.get(callerId ?? '')?.size ?? 0}`,
+    );
+
+    if (!callerId) {
+      console.warn(`[Call/WS] call_answer – no callerId for channel=${data.channelName}, dropping`);
+      return;
+    }
+
+    if (session) this.callSessions.markActive(data.channelName);
+
+    this.emitToUser(callerId, SE.CALL_ACCEPTED, { channelName: data.channelName });
+    console.log(`[Call/WS] call_accepted emitted to callerId=${callerId}`);
   }
 
   @SubscribeMessage(SE.CALL_REJECT)
@@ -314,7 +331,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   /** Push an event to a specific user across all their connected sockets. */
   emitToUser(userId: string, event: string, payload: unknown) {
     const socketIds = this.userSockets.get(userId);
-    if (!socketIds) return;
+    if (!socketIds || socketIds.size === 0) {
+      console.warn(`[Gateway] emitToUser – user=${userId} has NO connected sockets, event=${event} dropped`);
+      return;
+    }
+    console.log(`[Gateway] emitToUser userId=${userId} event=${event} sockets=${socketIds.size}`);
     for (const sid of socketIds) {
       this.server.to(sid).emit(event, payload);
     }

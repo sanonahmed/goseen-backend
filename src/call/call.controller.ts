@@ -144,6 +144,7 @@ export class CallController implements OnModuleInit {
     this.sessions.markActive(body.channelName);
 
     // Notify the caller that the call was accepted.
+    console.log(`[Call/HTTP] answer – emitting call_accepted to callerId=${callerId} channel=${body.channelName}`);
     this.gateway.emitToUser(callerId, SE.CALL_ACCEPTED, { channelName: body.channelName });
     await this.fcm.notifyCallEvent(callerId, 'call_accept', { channelName: body.channelName });
 
@@ -163,7 +164,7 @@ export class CallController implements OnModuleInit {
     // Free the rate-limit slot — the call was answered, not unanswered.
     if (session) this.sessions.clearInviteSlot(session.callerId, calleeId);
 
-    console.log(`[Call/HTTP] answer channel=${body.channelName} caller=${callerId}`);
+    console.log(`[Call/HTTP] answer complete channel=${body.channelName} caller=${callerId} callee=${calleeId}`);
     return { ok: true };
   }
 

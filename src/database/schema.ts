@@ -1,6 +1,7 @@
 // Incremental migrations — each entry is idempotent and runs on every deploy.
 export const MIGRATIONS: string[] = [
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS e2ee_public_key TEXT`,
 
   `CREATE TABLE IF NOT EXISTS call_logs (
     id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),

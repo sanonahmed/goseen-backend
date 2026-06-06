@@ -73,6 +73,21 @@ export class UsersService {
     );
   }
 
+  async saveE2eeKey(userId: string, publicKey: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE users SET e2ee_public_key = $1 WHERE id = $2',
+      [publicKey, userId],
+    );
+  }
+
+  async getE2eeKey(userId: string): Promise<string | null> {
+    const { rows } = await this.pool.query(
+      'SELECT e2ee_public_key FROM users WHERE id = $1',
+      [userId],
+    );
+    return (rows[0]?.e2ee_public_key as string | null) ?? null;
+  }
+
   async setOnlineStatus(userId: string, isOnline: boolean): Promise<void> {
     await this.pool.query(
       'UPDATE users SET is_online = $1, last_seen = NOW() WHERE id = $2',

@@ -10,6 +10,7 @@ import {
   UseGuards,
   Request,
   HttpCode,
+  NotFoundException,
 } from '@nestjs/common';
 import { IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -23,6 +24,10 @@ class UpdateMeDto {
 
 class FcmTokenDto {
   @IsString() token!: string;
+}
+
+class E2eeKeyDto {
+  @IsString() public_key!: string;
 }
 
 @UseGuards(JwtAuthGuard)
@@ -44,6 +49,19 @@ export class UsersController {
   @Patch('me')
   updateMe(@Request() req: any, @Body() dto: UpdateMeDto) {
     return this.users.updateMe(req.user.id, dto);
+  }
+
+  @Post('me/e2ee-key')
+  @HttpCode(204)
+  saveE2eeKey(@Request() req: any, @Body() dto: E2eeKeyDto) {
+    return this.users.saveE2eeKey(req.user.id, dto.public_key);
+  }
+
+  @Get(':userId/e2ee-key')
+  async getE2eeKey(@Param('userId') userId: string) {
+    const key = await this.users.getE2eeKey(userId);
+    if (!key) throw new NotFoundException('No E2EE key registered for this user');
+    return { public_key: key };
   }
 
   @Get('search')
