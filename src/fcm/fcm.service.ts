@@ -37,6 +37,65 @@ export class FcmService implements OnModuleInit {
   }
 
   /**
+   * Send a high-priority FCM call invite to a single user.
+   * Wakes the app even when backgrounded/killed. Fire-and-forget.
+   */
+  async notifyCallInvite(
+    calleeId: string,
+    payload: {
+      callerId: string;
+      callerName: string;
+      callerAvatar?: string | null;
+      channelName: string;
+      callType: string;
+    },
+  ): Promise<void> {
+    if (!this.ready) return;
+    try {
+      const { rows } = await this.pool.query<{ fcm_token: string | null }>(
+        `SELECT fcm_token FROM users WHERE id = $1`,
+        [calleeId],
+      );
+      const token = rows[0]?.fcm_token;
+      if (!token) return;
+
+      await admin.messaging().send({
+        token,
+        notification: {
+          title: `${payload.callerName} is calling`,
+          body:
+            payload.callType === 'video'
+              ? 'Incoming video call'
+              : 'Incoming voice call',
+        },
+        data: {
+          type: 'call_invite',
+          callerId: payload.callerId,
+          callerName: payload.callerName,
+          callerAvatar: payload.callerAvatar ?? '',
+          channelName: payload.channelName,
+          callType: payload.callType,
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'goseen_calls',
+            sound: 'default',
+            priority: 'max',
+            defaultVibrateTimings: true,
+          },
+        },
+        apns: {
+          headers: { 'apns-priority': '10' },
+          payload: { aps: { sound: 'default', contentAvailable: true } },
+        },
+      });
+    } catch (err) {
+      this.logger.error('FCM call invite failed', err);
+    }
+  }
+
+  /**
    * Send a push notification to all chat members except the sender.
    * Fire-and-forget — never throws.
    */

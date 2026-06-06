@@ -18,6 +18,7 @@ import { MessagesService } from '../messages/messages.service';
 import { ChatsService } from '../chats/chats.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
+import { FcmService } from '../fcm/fcm.service';
 
 // ── Socket event constants ────────────────────────────────────────────────────
 // Must match lib/core/network/socket_service.dart in Flutter
@@ -77,6 +78,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly chats: ChatsService,
     private readonly notifications: NotificationsService,
     private readonly users: UsersService,
+    private readonly fcm: FcmService,
   ) {}
 
   // ── Connection lifecycle ───────────────────────────────────────────────────
@@ -223,7 +225,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // ── Call signaling ────────────────────────────────────────────────────────
 
   @SubscribeMessage(SE.CALL_INVITE)
-  onCallInvite(
+  async onCallInvite(
     @ConnectedSocket() socket: Socket,
     @MessageBody()
     data: {
@@ -238,10 +240,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const calleeOnline = (this.userSockets.get(data.targetUserId)?.size ?? 0) > 0;
     console.log(`[Call] call_invite from=${callerId} to=${data.targetUserId} online=${calleeOnline} channel=${data.channelName}`);
     this.callSessions.set(data.channelName, { callerId, calleeId: data.targetUserId });
-    this.emitToUser(data.targetUserId, SE.INCOMING_CALL, {
+
+    const invitePayload = {
       callerId,
       callerName: data.callerName,
       callerAvatar: data.callerAvatar ?? null,
+      channelName: data.channelName,
+      callType: data.callType,
+    };
+
+    // Always emit via socket (works when callee is connected).
+    this.emitToUser(data.targetUserId, SE.INCOMING_CALL, invitePayload);
+
+    // Always also send FCM so the app wakes when backgrounded/killed.
+    await this.fcm.notifyCallInvite(data.targetUserId, {
+      callerId,
+      callerName: data.callerName,
+      callerAvatar: data.callerAvatar,
       channelName: data.channelName,
       callType: data.callType,
     });
