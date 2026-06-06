@@ -235,6 +235,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     },
   ) {
     const callerId = socket.data.userId as string;
+    const calleeOnline = (this.userSockets.get(data.targetUserId)?.size ?? 0) > 0;
+    console.log(`[Call] call_invite from=${callerId} to=${data.targetUserId} online=${calleeOnline} channel=${data.channelName}`);
     this.callSessions.set(data.channelName, { callerId, calleeId: data.targetUserId });
     this.emitToUser(data.targetUserId, SE.INCOMING_CALL, {
       callerId,
