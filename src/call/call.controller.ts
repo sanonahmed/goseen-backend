@@ -286,38 +286,51 @@ export class CallController implements OnModuleInit {
   }
 
   // ── Step 4.6: recent call logs ────────────────────────────────────────────
+  // Optional ?peerId=<uuid> filters to calls between the current user and that peer.
 
   @Get('logs')
   async getLogs(
     @Req() req: AuthedRequest,
     @Query('limit') limitStr?: string,
+    @Query('peerId') peerId?: string,
   ) {
     const userId = req.user.id;
     const limit = Math.min(parseInt(limitStr ?? '50', 10) || 50, 100);
 
-    const { rows } = await this.pool.query(
-      `SELECT
-         cl.id,
-         cl.channel_name,
-         cl.call_type,
-         cl.status,
-         cl.duration_seconds,
-         cl.started_at,
-         cl.ended_at,
-         cl.caller_id,
-         cl.callee_id,
-         caller.display_name AS caller_name,
-         caller.avatar_url   AS caller_avatar,
-         callee.display_name AS callee_name,
-         callee.avatar_url   AS callee_avatar
-       FROM call_logs cl
-       JOIN users caller ON caller.id = cl.caller_id
-       JOIN users callee ON callee.id = cl.callee_id
-       WHERE cl.caller_id = $1 OR cl.callee_id = $1
-       ORDER BY cl.started_at DESC
-       LIMIT $2`,
-      [userId, limit],
-    );
+    const baseSelect = `
+      SELECT
+        cl.id,
+        cl.channel_name,
+        cl.call_type,
+        cl.status,
+        cl.duration_seconds,
+        cl.started_at,
+        cl.ended_at,
+        cl.caller_id,
+        cl.callee_id,
+        caller.display_name AS caller_name,
+        caller.avatar_url   AS caller_avatar,
+        callee.display_name AS callee_name,
+        callee.avatar_url   AS callee_avatar
+      FROM call_logs cl
+      JOIN users caller ON caller.id = cl.caller_id
+      JOIN users callee ON callee.id = cl.callee_id
+    `;
+
+    const { rows } = peerId
+      ? await this.pool.query(
+          `${baseSelect}
+           WHERE (cl.caller_id = $1 AND cl.callee_id = $2)
+              OR (cl.callee_id = $1 AND cl.caller_id = $2)
+           ORDER BY cl.started_at DESC LIMIT $3`,
+          [userId, peerId, limit],
+        )
+      : await this.pool.query(
+          `${baseSelect}
+           WHERE cl.caller_id = $1 OR cl.callee_id = $1
+           ORDER BY cl.started_at DESC LIMIT $2`,
+          [userId, limit],
+        );
 
     return rows.map((row) => ({
       id:              row.id,
