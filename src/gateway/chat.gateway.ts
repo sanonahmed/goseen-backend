@@ -37,6 +37,8 @@ export const SE = {
   CALL_ANSWER:  'call_answer',
   CALL_REJECT:  'call_reject',
   CALL_END:     'call_end',
+  // Client → Server: reactions (socket path — avoids HTTP round-trip latency)
+  TOGGLE_REACTION: 'toggle_reaction',
   // Client → Server: mid-call video upgrade
   VIDEO_UPGRADE_REQ: 'video_upgrade_req',  // requester → server → target
   VIDEO_UPGRADE_RES: 'video_upgrade_res',  // responder → server → requester
@@ -368,6 +370,45 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (session) session.callType = 'video';
     }
     console.log(`[Call/WS] video_upgrade_res channel=${data.channelName} accepted=${data.accepted}`);
+  }
+
+  // ── Reactions (socket path) ───────────────────────────────────────────────
+
+  @SubscribeMessage(SE.TOGGLE_REACTION)
+  async onToggleReaction(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody()
+    data: { chatId: string; messageId: string; emoji: string; remove: boolean },
+  ) {
+    const userId = socket.data.userId as string;
+    try {
+      await this.chats.assertMember(data.chatId, userId);
+      if (data.remove) {
+        await this.messages.removeReaction(data.messageId, userId, data.emoji);
+      } else {
+        await this.messages.addReaction(data.messageId, userId, data.emoji);
+      }
+      await this._broadcastReactions(data.chatId, data.messageId);
+    } catch {
+      // Silent — client keeps optimistic state; a retry or poll will reconcile.
+    }
+  }
+
+  private async _broadcastReactions(chatId: string, messageId: string) {
+    const memberIds = await this.chats.getMemberIds(chatId);
+    await Promise.all(
+      memberIds.map(async (memberId) => {
+        const reactions = await this.messages.getReactionsForMessage(
+          messageId,
+          memberId,
+        );
+        this.emitToUser(memberId, 'reaction_added', {
+          chat_id: chatId,
+          message_id: messageId,
+          reactions,
+        });
+      }),
+    );
   }
 
   // ── Server-initiated push ─────────────────────────────────────────────────
