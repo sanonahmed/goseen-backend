@@ -64,6 +64,11 @@ export class UsersController {
     return { public_key: key };
   }
 
+  @Get('online')
+  getOnlineConnections(@Request() req: any) {
+    return this.users.getConnectedUsers(req.user.id);
+  }
+
   @Get('search')
   search(@Query('q') q: string) {
     return this.users.searchUsers(q ?? '');

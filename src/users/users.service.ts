@@ -141,4 +141,63 @@ export class UsersService {
       [followerId, followingId],
     );
   }
+
+  // Returns accepted connections (anyone I follow or who follows me) ordered
+  // by online first, then most-recently-seen.
+  async getConnectedUsers(userId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT DISTINCT u.id, u.username, u.display_name, u.avatar_url,
+              u.is_online, u.last_seen
+       FROM users u
+       INNER JOIN connections c ON (
+         (c.follower_id = $1 AND c.following_id = u.id)
+         OR
+         (c.following_id = $1 AND c.follower_id = u.id)
+       )
+       WHERE c.status = 'accepted' AND u.id != $1
+       ORDER BY u.is_online DESC, u.last_seen DESC
+       LIMIT 100`,
+      [userId],
+    );
+    return rows;
+  }
+
+  // Incoming pending requests (others sent to me).
+  async getIncomingRequests(userId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT u.id AS user_id, u.username, u.display_name, u.avatar_url,
+              u.is_online, c.created_at AS requested_at
+       FROM connections c
+       INNER JOIN users u ON u.id = c.follower_id
+       WHERE c.following_id = $1 AND c.status = 'pending'
+       ORDER BY c.created_at DESC`,
+      [userId],
+    );
+    return rows;
+  }
+
+  async sendConnectionRequest(fromId: string, toId: string) {
+    await this.pool.query(
+      `INSERT INTO connections (follower_id, following_id, status)
+       VALUES ($1, $2, 'pending')
+       ON CONFLICT (follower_id, following_id) DO NOTHING`,
+      [fromId, toId],
+    );
+  }
+
+  async acceptConnectionRequest(requesterId: string, acceptorId: string) {
+    await this.pool.query(
+      `UPDATE connections SET status = 'accepted'
+       WHERE follower_id = $1 AND following_id = $2 AND status = 'pending'`,
+      [requesterId, acceptorId],
+    );
+  }
+
+  async declineConnectionRequest(requesterId: string, declinerId: string) {
+    await this.pool.query(
+      `DELETE FROM connections
+       WHERE follower_id = $1 AND following_id = $2 AND status = 'pending'`,
+      [requesterId, declinerId],
+    );
+  }
 }
