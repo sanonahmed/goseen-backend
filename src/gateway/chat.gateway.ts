@@ -94,10 +94,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleConnection(socket: Socket) {
     const userId = await this.authenticate(socket);
-    if (!userId) return socket.disconnect();
+    if (!userId) {
+      console.warn(`[Socket] connection rejected — no valid token sid=${socket.id}`);
+      return socket.disconnect();
+    }
 
     socket.data.userId = userId;
     this.trackSocket(userId, socket.id);
+    console.log(`[Socket] connected userId=${userId} sid=${socket.id} transport=${socket.conn.transport.name}`);
 
     await this.users.setOnlineStatus(userId, true);
     this.broadcastPresence(userId, true);

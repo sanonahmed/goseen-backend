@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -28,6 +29,12 @@ async function bootstrap() {
     origin: process.env.CORS_ORIGIN ?? '*',
     credentials: true,
   });
+
+  // Without this, NestJS defaults to the plain `ws` adapter when both ws and
+  // socket.io are installed. The Flutter socket_io_client speaks the Socket.IO
+  // EIO4 protocol and cannot communicate with a ws server — every connection
+  // attempt times out.
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
