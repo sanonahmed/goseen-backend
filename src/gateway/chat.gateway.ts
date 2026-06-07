@@ -75,7 +75,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server!: Server;
 
-  // userId → Set<socketId>  (one user can have multiple tabs/devices)
+  // Kept for isUserOnline check only; emitToUser now uses 'user:{id}' rooms.
   private readonly userSockets = new Map<string, Set<string>>();
 
   constructor(
@@ -101,6 +101,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     socket.data.userId = userId;
     this.trackSocket(userId, socket.id);
+    // Each socket joins a personal room so emitToUser can target all of a
+    // user's devices without maintaining a manual socket-ID Map.
+    await socket.join(`user:${userId}`);
     console.log(`[Socket] connected userId=${userId} sid=${socket.id} transport=${socket.conn.transport.name}`);
 
     await this.users.setOnlineStatus(userId, true);
@@ -433,17 +436,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // ── Server-initiated push ─────────────────────────────────────────────────
 
-  /** Push an event to a specific user across all their connected sockets. */
+  /** Push an event to a specific user across all their connected sockets.
+   *  Uses the 'user:{id}' personal room — more reliable than a manual socket
+   *  ID Map because Socket.IO manages room membership internally and there is
+   *  no stale-entry gap when the user reconnects.
+   */
   emitToUser(userId: string, event: string, payload: unknown) {
-    const socketIds = this.userSockets.get(userId);
-    if (!socketIds || socketIds.size === 0) {
+    const room = `user:${userId}`;
+    const roomSize = this.server.sockets.adapter.rooms.get(room)?.size ?? 0;
+    if (roomSize === 0) {
       console.warn(`[Gateway] emitToUser – user=${userId} has NO connected sockets, event=${event} dropped`);
       return;
     }
-    console.log(`[Gateway] emitToUser userId=${userId} event=${event} sockets=${socketIds.size}`);
-    for (const sid of socketIds) {
-      this.server.to(sid).emit(event, payload);
-    }
+    console.log(`[Gateway] emitToUser userId=${userId} event=${event} sockets=${roomSize}`);
+    this.server.to(room).emit(event, payload);
   }
 
   emitToChat(chatId: string, event: string, payload: unknown) {
