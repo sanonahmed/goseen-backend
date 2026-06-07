@@ -11,10 +11,14 @@ import {
   Request,
   ParseIntPipe,
   DefaultValuePipe,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { IsString, IsOptional, IsNumber, MinLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MessagesService } from './messages.service';
+import { ChatsService } from '../chats/chats.service';
+import { ChatGateway } from '../gateway/chat.gateway';
 
 class SendMessageDto {
   @IsOptional() @IsString() text?: string;
@@ -36,7 +40,12 @@ class ReactionDto {
 @UseGuards(JwtAuthGuard)
 @Controller()
 export class MessagesController {
-  constructor(private readonly messages: MessagesService) {}
+  constructor(
+    private readonly messages: MessagesService,
+    private readonly chats: ChatsService,
+    @Inject(forwardRef(() => ChatGateway))
+    private readonly gateway: ChatGateway,
+  ) {}
 
   @Get('chats/:chatId/messages')
   getMessages(
@@ -72,20 +81,43 @@ export class MessagesController {
   }
 
   @Post('chats/:chatId/messages/:msgId/reactions')
-  addReaction(
+  async addReaction(
+    @Param('chatId') chatId: string,
     @Param('msgId') msgId: string,
     @Request() req: any,
     @Body() dto: ReactionDto,
   ) {
-    return this.messages.addReaction(msgId, req.user.id, dto.emoji);
+    await this.messages.addReaction(msgId, req.user.id, dto.emoji);
+    await this._broadcastReactions(chatId, msgId);
   }
 
-  @Delete('chats/:chatId/messages/:msgId/reactions/:emoji')
-  removeReaction(
+  @Delete('chats/:chatId/messages/:msgId/reactions')
+  async removeReaction(
+    @Param('chatId') chatId: string,
     @Param('msgId') msgId: string,
-    @Param('emoji') emoji: string,
     @Request() req: any,
+    @Body() dto: ReactionDto,
   ) {
-    return this.messages.removeReaction(msgId, req.user.id, emoji);
+    await this.messages.removeReaction(msgId, req.user.id, dto.emoji);
+    await this._broadcastReactions(chatId, msgId);
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  private async _broadcastReactions(chatId: string, messageId: string) {
+    const memberIds = await this.chats.getMemberIds(chatId);
+    await Promise.all(
+      memberIds.map(async (memberId) => {
+        const reactions = await this.messages.getReactionsForMessage(
+          messageId,
+          memberId,
+        );
+        this.gateway.emitToUser(memberId, 'reaction_added', {
+          chat_id: chatId,
+          message_id: messageId,
+          reactions,
+        });
+      }),
+    );
   }
 }

@@ -145,6 +145,24 @@ export class MessagesService {
     );
   }
 
+  async getReactionsForMessage(messageId: string, viewerId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT emoji,
+              COUNT(*)::int AS count,
+              BOOL_OR(user_id = $2) AS reacted_by_me
+       FROM message_reactions
+       WHERE message_id = $1
+       GROUP BY emoji
+       ORDER BY MIN(created_at)`,
+      [messageId, viewerId],
+    );
+    return rows.map((r) => ({
+      emoji: r.emoji as string,
+      count: r.count as number,
+      reacted_by_me: r.reacted_by_me as boolean,
+    }));
+  }
+
   async addReaction(messageId: string, userId: string, emoji: string) {
     await this.pool.query(
       `INSERT INTO message_reactions (message_id, user_id, emoji)

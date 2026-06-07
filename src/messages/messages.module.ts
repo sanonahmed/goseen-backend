@@ -1,11 +1,12 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { MessagesController } from './messages.controller';
 import { ChatsModule } from '../chats/chats.module';
 import { FcmModule } from '../fcm/fcm.module';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
-  imports: [ChatsModule, FcmModule],
+  imports: [ChatsModule, FcmModule, forwardRef(() => GatewayModule)],
   providers: [MessagesService],
   controllers: [MessagesController],
   exports: [MessagesService],

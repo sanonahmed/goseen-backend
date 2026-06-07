@@ -11,7 +11,7 @@ import { CallSessionStore } from '../call/call-session.store';
   imports: [
     JwtModule.register({}),
     ChatsModule,
-    MessagesModule,
+    forwardRef(() => MessagesModule),
     NotificationsModule,
     forwardRef(() => UsersModule),
   ],

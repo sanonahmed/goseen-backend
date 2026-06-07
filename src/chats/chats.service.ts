@@ -164,6 +164,14 @@ export class ChatsService {
 
   // ── Helper ────────────────────────────────────────────────────────────────
 
+  async getMemberIds(chatId: string): Promise<string[]> {
+    const { rows } = await this.pool.query(
+      'SELECT user_id FROM chat_members WHERE chat_id = $1',
+      [chatId],
+    );
+    return rows.map((r) => r.user_id as string);
+  }
+
   async assertMember(chatId: string, userId: string): Promise<void> {
     const { rows } = await this.pool.query(
       'SELECT id FROM chat_members WHERE chat_id = $1 AND user_id = $2',
