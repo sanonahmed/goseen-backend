@@ -54,6 +54,10 @@ export const SE = {
   CALL_REJECTED:   'call_rejected',
   CALL_CANCELLED:  'call_cancelled',
   CALL_ENDED:      'call_ended',
+  // Server → Client: mid-call video upgrade
+  VIDEO_UPGRADE_REQUEST:  'video_upgrade_request',
+  VIDEO_UPGRADE_ACCEPTED: 'video_upgrade_accepted',
+  VIDEO_UPGRADE_DECLINED: 'video_upgrade_declined',
 } as const;
 
 @WebSocketGateway({

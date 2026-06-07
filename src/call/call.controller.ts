@@ -232,6 +232,40 @@ export class CallController implements OnModuleInit {
     return { ok: true };
   }
 
+  // ── video upgrade request ─────────────────────────────────────────────────
+
+  @Post('video-upgrade-request')
+  videoUpgradeRequest(
+    @Req() req: AuthedRequest,
+    @Body() body: { channelName: string; targetUserId: string },
+  ) {
+    const session = this.sessions.get(body.channelName);
+    const requesterName =
+      session?.callerName ?? req.user.id;
+
+    const payload = { channelName: body.channelName, requesterName };
+    this.gateway.emitToUser(body.targetUserId, SE.VIDEO_UPGRADE_REQUEST, payload);
+    console.log(`[Call/HTTP] video-upgrade-request channel=${body.channelName} target=${body.targetUserId}`);
+    return { ok: true };
+  }
+
+  // ── video upgrade response (accept / decline) ─────────────────────────────
+
+  @Post('video-upgrade-response')
+  videoUpgradeResponse(
+    @Req() req: AuthedRequest,
+    @Body() body: { channelName: string; requesterId: string; accepted: boolean },
+  ) {
+    const event = body.accepted ? SE.VIDEO_UPGRADE_ACCEPTED : SE.VIDEO_UPGRADE_DECLINED;
+    this.gateway.emitToUser(body.requesterId, event, { channelName: body.channelName });
+    if (body.accepted) {
+      const session = this.sessions.get(body.channelName);
+      if (session) session.callType = 'video';
+    }
+    console.log(`[Call/HTTP] video-upgrade-response channel=${body.channelName} accepted=${body.accepted}`);
+    return { ok: true };
+  }
+
   // ── call status (polling fallback for callee-answered detection) ─────────
 
   @Get('status')
