@@ -49,7 +49,8 @@ export const SE = {
   USER_ONLINE:      'user_online',
   USER_OFFLINE:     'user_offline',
   MSG_SEEN:         'message_seen',
-  NEW_NOTIFICATION: 'new_notification',
+  NEW_NOTIFICATION:     'new_notification',
+  CONNECTION_REQUEST:   'connection_request',
   DELIVERED:        'delivered',
   // Server → Client: call signaling
   INCOMING_CALL:   'incoming_call',

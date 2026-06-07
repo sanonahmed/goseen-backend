@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ChatGateway } from './chat.gateway';
 import { ChatsModule } from '../chats/chats.module';
@@ -13,7 +13,7 @@ import { CallSessionStore } from '../call/call-session.store';
     ChatsModule,
     MessagesModule,
     NotificationsModule,
-    UsersModule,
+    forwardRef(() => UsersModule),
   ],
   providers: [ChatGateway, CallSessionStore],
   exports: [ChatGateway, CallSessionStore],

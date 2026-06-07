@@ -103,6 +103,14 @@ export class UsersService {
     return rows[0]?.last_seen as Date | undefined;
   }
 
+  async getUserById(userId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT id, username, display_name, avatar_url FROM users WHERE id = $1`,
+      [userId],
+    );
+    return rows[0] ?? null;
+  }
+
   async getOnlineUsers(userIds: string[]) {
     if (userIds.length === 0) return [];
     const placeholders = userIds.map((_, i) => `$${i + 1}`).join(', ');
