@@ -245,6 +245,11 @@ export class CallController implements OnModuleInit {
 
     const payload = { channelName: body.channelName, requesterName };
     this.gateway.emitToUser(body.targetUserId, SE.VIDEO_UPGRADE_REQUEST, payload);
+    // FCM backup: ensures delivery even if socket tracking was lost.
+    this.fcm.notifyCallEvent(body.targetUserId, 'video_upgrade_request', {
+      channelName: body.channelName,
+      requesterName,
+    });
     console.log(`[Call/HTTP] video-upgrade-request channel=${body.channelName} target=${body.targetUserId}`);
     return { ok: true };
   }
@@ -262,6 +267,10 @@ export class CallController implements OnModuleInit {
       const session = this.sessions.get(body.channelName);
       if (session) session.callType = 'video';
     }
+    const fcmType = body.accepted ? 'video_upgrade_accepted' : 'video_upgrade_declined';
+    this.fcm.notifyCallEvent(body.requesterId, fcmType, {
+      channelName: body.channelName,
+    });
     console.log(`[Call/HTTP] video-upgrade-response channel=${body.channelName} accepted=${body.accepted}`);
     return { ok: true };
   }

@@ -37,6 +37,9 @@ export const SE = {
   CALL_ANSWER:  'call_answer',
   CALL_REJECT:  'call_reject',
   CALL_END:     'call_end',
+  // Client → Server: mid-call video upgrade
+  VIDEO_UPGRADE_REQ: 'video_upgrade_req',  // requester → server → target
+  VIDEO_UPGRADE_RES: 'video_upgrade_res',  // responder → server → requester
   // Server → Client
   NEW_MSG:          'new_message',
   MSG_UPDATED:      'message_updated',
@@ -336,6 +339,34 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const enderId = socket.data.userId as string;
     const otherId = enderId === session.callerId ? session.calleeId : session.callerId;
     this.emitToUser(otherId, SE.CALL_ENDED, { channelName: data.channelName });
+  }
+
+  @SubscribeMessage(SE.VIDEO_UPGRADE_REQ)
+  onVideoUpgradeReq(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() data: { channelName: string; targetUserId: string },
+  ) {
+    const session = this.callSessions.get(data.channelName);
+    const requesterName = session?.callerName ?? 'Unknown';
+    this.emitToUser(data.targetUserId, SE.VIDEO_UPGRADE_REQUEST, {
+      channelName: data.channelName,
+      requesterName,
+    });
+    console.log(`[Call/WS] video_upgrade_req channel=${data.channelName} target=${data.targetUserId}`);
+  }
+
+  @SubscribeMessage(SE.VIDEO_UPGRADE_RES)
+  onVideoUpgradeRes(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() data: { channelName: string; requesterId: string; accepted: boolean },
+  ) {
+    const event = data.accepted ? SE.VIDEO_UPGRADE_ACCEPTED : SE.VIDEO_UPGRADE_DECLINED;
+    this.emitToUser(data.requesterId, event, { channelName: data.channelName });
+    if (data.accepted) {
+      const session = this.callSessions.get(data.channelName);
+      if (session) session.callType = 'video';
+    }
+    console.log(`[Call/WS] video_upgrade_res channel=${data.channelName} accepted=${data.accepted}`);
   }
 
   // ── Server-initiated push ─────────────────────────────────────────────────
