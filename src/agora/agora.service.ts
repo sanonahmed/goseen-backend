@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { createHmac } from 'crypto';
 
 const CRC_TABLE: number[] = (() => {
@@ -35,7 +35,7 @@ export class AgoraService {
     const appCertificate = process.env.AGORA_APP_CERTIFICATE ?? '';
 
     if (!appId || !appCertificate) {
-      throw new Error('AGORA_APP_ID and AGORA_APP_CERTIFICATE must be set');
+      throw new ServiceUnavailableException('No active Agora key configured');
     }
 
     const now = Math.floor(Date.now() / 1000);
