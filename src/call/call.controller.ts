@@ -286,12 +286,15 @@ export class CallController implements OnModuleInit {
   }
 
   // ── Step 4.6: recent call logs ────────────────────────────────────────────
-  // Optional ?peerId=<uuid> filters to calls between the current user and that peer.
+  // ?chatId=<uuid>  — filters to calls between the two members of a personal chat.
+  // ?peerId=<uuid>  — filters to calls between the current user and that peer (fallback).
+  // No param       — returns all recent calls for the current user.
 
   @Get('logs')
   async getLogs(
     @Req() req: AuthedRequest,
     @Query('limit') limitStr?: string,
+    @Query('chatId') chatId?: string,
     @Query('peerId') peerId?: string,
   ) {
     const userId = req.user.id;
@@ -317,7 +320,18 @@ export class CallController implements OnModuleInit {
       JOIN users callee ON callee.id = cl.callee_id
     `;
 
-    const { rows } = peerId
+    // chatId filter: both caller and callee must be members of the given chat.
+    // This works for personal chats without needing to know the peer's user ID.
+    const { rows } = chatId
+      ? await this.pool.query(
+          `${baseSelect}
+           WHERE (cl.caller_id = $1 OR cl.callee_id = $1)
+             AND cl.caller_id IN (SELECT user_id FROM chat_members WHERE chat_id = $2)
+             AND cl.callee_id IN (SELECT user_id FROM chat_members WHERE chat_id = $2)
+           ORDER BY cl.started_at DESC LIMIT $3`,
+          [userId, chatId, limit],
+        )
+      : peerId
       ? await this.pool.query(
           `${baseSelect}
            WHERE (cl.caller_id = $1 AND cl.callee_id = $2)
