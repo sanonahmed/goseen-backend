@@ -38,6 +38,7 @@ export class ChatsService {
            ELSE FALSE
          END AS is_online,
          other.id        AS peer_id,
+         other.username  AS peer_username,
          other.last_seen AS last_seen
        FROM chat_members cm
        JOIN chats c ON c.id = cm.chat_id
