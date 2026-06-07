@@ -375,7 +375,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // ── Reactions (socket path) ───────────────────────────────────────────────
 
   @SubscribeMessage(SE.TOGGLE_REACTION)
-  async onToggleReaction(
+  onToggleReaction(
     @ConnectedSocket() socket: Socket,
     @MessageBody()
     data: {
@@ -383,54 +383,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       messageId: string;
       emoji: string;
       remove: boolean;
-      reactions?: Array<{ emoji: string; count: number }>;
+      reactions: Array<{ emoji: string; count: number }>;
     },
   ) {
-    const userId = socket.data.userId as string;
-
-    // ── Step 1: Instant broadcast (zero DB reads) ───────────────────────────
-    // The client already computed the optimistic counts and sent them in the
-    // payload. Emit straight to the chat room so all members see the reaction
-    // before we even touch the database.
-    if (data.reactions?.length) {
-      this.server.to(`chat:${data.chatId}`).emit('reaction_added', {
-        chat_id: data.chatId,
-        message_id: data.messageId,
-        reactions: data.reactions, // counts only — no reacted_by_me
-      });
-    }
-
-    // ── Step 2: Persist to DB ───────────────────────────────────────────────
-    try {
-      if (data.remove) {
-        await this.messages.removeReaction(data.messageId, userId, data.emoji);
-      } else {
-        await this.messages.addReaction(data.messageId, userId, data.emoji);
-      }
-    } catch {
-      return; // write failed — optimistic broadcast will self-correct on next poll
-    }
-
-    // ── Step 3: Confirmed broadcast (single COUNT query, no per-member reads) ─
-    // Fire-and-forget. Reconciles the count if anything differed from the
-    // optimistic estimate. reacted_by_me is omitted; Flutter preserves it from state.
-    this._broadcastReactionCounts(data.chatId, data.messageId).catch(() => {});
-  }
-
-  private async _broadcastReactionCounts(chatId: string, messageId: string) {
-    const { rows } = await this.pool.query<{ emoji: string; count: number }>(
-      `SELECT emoji, COUNT(*)::int AS count
-       FROM message_reactions
-       WHERE message_id = $1
-       GROUP BY emoji
-       ORDER BY MIN(created_at)`,
-      [messageId],
-    );
-    this.server.to(`chat:${chatId}`).emit('reaction_added', {
-      chat_id: chatId,
-      message_id: messageId,
-      reactions: rows.map((r) => ({ emoji: r.emoji, count: r.count })),
+    // Emit to the room in the same synchronous tick — zero DB reads, zero awaits.
+    // Every member in chat:${chatId} receives reaction_added immediately.
+    this.server.to(`chat:${data.chatId}`).emit('reaction_added', {
+      chat_id: data.chatId,
+      message_id: data.messageId,
+      reactions: data.reactions,
     });
+
+    // Persist async in the background — never blocks the emit above.
+    const userId = socket.data.userId as string;
+    (data.remove
+      ? this.messages.removeReaction(data.messageId, userId, data.emoji)
+      : this.messages.addReaction(data.messageId, userId, data.emoji)
+    ).catch(() => {});
   }
 
   // ── Server-initiated push ─────────────────────────────────────────────────
