@@ -395,10 +395,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = socket.data.userId as string;
     const roomName = `chat:${data.chatId}`;
     const roomSize = this.server.sockets.adapter.rooms.get(roomName)?.size ?? 0;
-    console.log(`[Reaction] toggle_reaction from=${userId} room=${roomName} roomSize=${roomSize} emoji=${data.emoji} remove=${data.remove} reactions=${JSON.stringify(data.reactions)}`);
+    console.log(`[Reaction] toggle_reaction from=${userId} room=${roomName} roomSize=${roomSize} emoji=${data.emoji} remove=${data.remove}`);
 
-    // Immediate broadcast with client-supplied optimistic counts (zero DB reads).
-    // reactions may be an empty array when the last reaction is removed.
+    // Phase 1 — Immediate optimistic broadcast (zero DB reads).
+    // Uses client-supplied counts so both users see the reaction instantly.
     const optimisticReactions = Array.isArray(data.reactions) ? data.reactions : [];
     this.server.to(roomName).emit('reaction_added', {
       chat_id: data.chatId,
@@ -407,28 +407,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
     console.log(`[Reaction] optimistic broadcast done to ${roomSize} sockets`);
 
-    // Persist to DB then re-broadcast the DB-accurate counts as a confirmation.
-    // This ensures correctness when concurrent reactions make the optimistic count wrong.
-    const userId2 = userId;
+    // Phase 2 — Persist to DB, then send per-user confirmed reactions.
+    // Per-user emission includes reacted_by_me so each client knows whether
+    // THEY reacted, without relying on local-state fallbacks.
     (data.remove
-      ? this.messages.removeReaction(data.messageId, userId2, data.emoji)
-      : this.messages.addReaction(data.messageId, userId2, data.emoji)
-    ).then(() =>
-      this.pool.query(
-        `SELECT emoji, COUNT(*)::int AS count
-         FROM message_reactions
-         WHERE message_id = $1
-         GROUP BY emoji`,
-        [data.messageId],
-      ),
-    ).then(({ rows }) => {
-      const actualReactions = rows.map((r) => ({ emoji: r.emoji as string, count: r.count as number }));
-      this.server.to(roomName).emit('reaction_added', {
-        chat_id: data.chatId,
-        message_id: data.messageId,
-        reactions: actualReactions,
-      });
-      console.log(`[Reaction] confirmed broadcast done reactions=${JSON.stringify(actualReactions)}`);
+      ? this.messages.removeReaction(data.messageId, userId, data.emoji)
+      : this.messages.addReaction(data.messageId, userId, data.emoji)
+    ).then(async () => {
+      const memberIds = await this.chats.getMemberIds(data.chatId);
+      await Promise.all(
+        memberIds.map(async (memberId) => {
+          const reactions = await this.messages.getReactionsForMessage(data.messageId, memberId);
+          this.emitToUser(memberId, 'reaction_added', {
+            chat_id: data.chatId,
+            message_id: data.messageId,
+            reactions,
+          });
+        }),
+      );
+      console.log(`[Reaction] confirmed per-user broadcast done for ${memberIds.length} members`);
     }).catch((err) => {
       console.error(`[Reaction] DB persist/confirm failed: ${err}`);
     });
