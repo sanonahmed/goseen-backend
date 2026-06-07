@@ -18,7 +18,7 @@ import { IsString, IsOptional, IsNumber, MinLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MessagesService } from './messages.service';
 import { ChatsService } from '../chats/chats.service';
-import { ChatGateway } from '../gateway/chat.gateway';
+import { ChatGateway, SE } from '../gateway/chat.gateway';
 
 class SendMessageDto {
   @IsOptional() @IsString() text?: string;
@@ -58,12 +58,14 @@ export class MessagesController {
   }
 
   @Post('chats/:chatId/messages')
-  sendMessage(
+  async sendMessage(
     @Param('chatId') chatId: string,
     @Request() req: any,
     @Body() dto: SendMessageDto,
   ) {
-    return this.messages.sendMessage(chatId, req.user.id, dto);
+    const msg = await this.messages.sendMessage(chatId, req.user.id, dto);
+    this.gateway.emitToChat(chatId, SE.NEW_MSG, { ...msg, chat_id: chatId });
+    return msg;
   }
 
   @Patch('chats/:chatId/messages/:msgId')
