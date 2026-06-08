@@ -123,8 +123,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       console.log(`[Socket] connected userId=${userId} sid=${socket.id} transport=${socket.conn.transport.name}`);
     }
 
-    await this.users.setOnlineStatus(userId, true);
-    this.broadcastPresence(userId, true);
+    try {
+      await this.users.setOnlineStatus(userId, true);
+      this.broadcastPresence(userId, true);
+    } catch (err) {
+      console.error(`[Socket] setOnlineStatus failed userId=${userId}: ${err}`);
+      // Don't disconnect — user is authenticated and in their rooms; presence just won't update.
+    }
   }
 
   async handleDisconnect(socket: Socket) {
@@ -135,10 +140,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // Only broadcast offline when last device disconnects
     if (!this.userSockets.get(userId)?.size) {
-      await this.users.setOnlineStatus(userId, false);
-      // Fetch the timestamp that was just written so the client gets the exact value.
-      const lastSeen = await this.users.getLastSeen(userId);
-      this.broadcastPresence(userId, false, lastSeen);
+      try {
+        await this.users.setOnlineStatus(userId, false);
+        const lastSeen = await this.users.getLastSeen(userId);
+        this.broadcastPresence(userId, false, lastSeen);
+      } catch (err) {
+        console.error(`[Socket] setOfflineStatus failed userId=${userId}: ${err}`);
+      }
     }
   }
 
