@@ -3,6 +3,7 @@ export const MIGRATIONS: string[] = [
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS e2ee_public_key TEXT`,
   `ALTER TABLE chats ADD COLUMN IF NOT EXISTS username VARCHAR(50) UNIQUE`,
+  `ALTER TABLE chats ADD COLUMN IF NOT EXISTS invite_token VARCHAR(32) UNIQUE`,
 
   `CREATE TABLE IF NOT EXISTS call_logs (
     id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),

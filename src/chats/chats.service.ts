@@ -289,6 +289,73 @@ export class ChatsService {
     );
   }
 
+  // ── Invite links (private channels) ──────────────────────────────────────
+
+  async generateInviteToken(channelId: string, userId: string): Promise<string> {
+    const { rows: member } = await this.pool.query(
+      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [channelId, userId],
+    );
+    if (!member[0] || member[0].role !== 'owner') {
+      throw new ForbiddenException('Only the channel owner can manage invite links');
+    }
+    const { rows } = await this.pool.query(
+      `UPDATE chats
+       SET invite_token = encode(gen_random_bytes(16), 'hex')
+       WHERE id = $1 AND type = 'channel'
+       RETURNING invite_token`,
+      [channelId],
+    );
+    if (!rows[0]) throw new NotFoundException('Channel not found');
+    return rows[0].invite_token as string;
+  }
+
+  async revokeInviteToken(channelId: string, userId: string): Promise<void> {
+    const { rows: member } = await this.pool.query(
+      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [channelId, userId],
+    );
+    if (!member[0] || member[0].role !== 'owner') {
+      throw new ForbiddenException('Only the channel owner can manage invite links');
+    }
+    await this.pool.query(
+      'UPDATE chats SET invite_token = NULL WHERE id = $1',
+      [channelId],
+    );
+  }
+
+  async joinByInvite(token: string, userId: string) {
+    const { rows } = await this.pool.query(
+      'SELECT id, type FROM chats WHERE invite_token = $1',
+      [token],
+    );
+    if (!rows[0]) throw new NotFoundException('Invalid or expired invite link');
+    if (rows[0].type !== 'channel') throw new BadRequestException('Not a channel invite');
+    const channelId = rows[0].id as string;
+
+    await this.pool.query(
+      `INSERT INTO chat_members (chat_id, user_id, role)
+       VALUES ($1, $2, 'member')
+       ON CONFLICT (chat_id, user_id) DO NOTHING`,
+      [channelId, userId],
+    );
+
+    const { rows: chatRows } = await this.pool.query(
+      `SELECT c.id, c.type, c.name, c.avatar_url, c.username, c.is_public,
+              c.description, c.created_by,
+              NULL::text        AS last_message,
+              NULL::timestamptz AS last_message_time,
+              0                 AS unread_count,
+              FALSE             AS is_muted,
+              FALSE             AS is_pinned,
+              FALSE             AS is_online,
+              FALSE             AS is_verified
+       FROM chats c WHERE c.id = $1`,
+      [channelId],
+    );
+    return chatRows[0] ?? { id: channelId, type: 'channel' };
+  }
+
   // ── Mark seen ─────────────────────────────────────────────────────────────
 
   async markSeen(chatId: string, userId: string): Promise<void> {

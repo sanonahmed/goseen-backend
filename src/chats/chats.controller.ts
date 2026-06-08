@@ -70,6 +70,13 @@ export class ChatsController {
     return this.chats.searchChannels(q ?? '');
   }
 
+  @Post('join-by-invite/:token')
+  async joinByInvite(@Param('token') token: string, @Request() req: any) {
+    const result = await this.chats.joinByInvite(token, req.user.id);
+    this.gateway.emitToChat(result.id, SE.MEMBER_COUNT_UPDATED, { channelId: result.id, delta: 1 });
+    return result;
+  }
+
   @Get(':id')
   getChatById(@Param('id') id: string, @Request() req: any) {
     return this.chats.getChatById(id, req.user.id);
@@ -120,5 +127,16 @@ export class ChatsController {
   async leaveChannel(@Param('id') id: string, @Request() req: any) {
     await this.chats.leaveChannel(id, req.user.id);
     this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { channelId: id, delta: -1 });
+  }
+
+  @Post(':id/invite-link')
+  async generateInviteLink(@Param('id') id: string, @Request() req: any) {
+    const token = await this.chats.generateInviteToken(id, req.user.id);
+    return { invite_token: token, invite_link: `https://goseen.org/join/${token}` };
+  }
+
+  @Delete(':id/invite-link')
+  revokeInviteLink(@Param('id') id: string, @Request() req: any) {
+    return this.chats.revokeInviteToken(id, req.user.id);
   }
 }
