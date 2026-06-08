@@ -168,7 +168,7 @@ export class GroupsService {
            ON CONFLICT (chat_id, user_id) DO NOTHING`,
           [groupId, userId]
         );
-        if (rowCount > 0) insertedCount++;
+        if ((rowCount ?? 0) > 0) insertedCount++;
       }
 
       // Update member count

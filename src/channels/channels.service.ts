@@ -132,7 +132,7 @@ export class ChannelsService {
     );
 
     // Update subscriber count
-    if (rowCount > 0) {
+    if ((rowCount ?? 0) > 0) {
       const { rows } = await this.pool.query(
         `SELECT COUNT(*)::INT as count FROM chat_members WHERE chat_id = $1`,
         [channelId]
@@ -143,7 +143,7 @@ export class ChannelsService {
       );
     }
 
-    return { subscribed: rowCount > 0 };
+    return { subscribed: (rowCount ?? 0) > 0 };
   }
 
   async unsubscribe(channelId: string, userId: string) {
@@ -153,7 +153,7 @@ export class ChannelsService {
     );
 
     // Update subscriber count
-    if (rowCount > 0) {
+    if ((rowCount ?? 0) > 0) {
       const { rows } = await this.pool.query(
         `SELECT COUNT(*)::INT as count FROM chat_members WHERE chat_id = $1`,
         [channelId]
@@ -164,7 +164,7 @@ export class ChannelsService {
       );
     }
 
-    return { unsubscribed: rowCount > 0 };
+    return { unsubscribed: (rowCount ?? 0) > 0 };
   }
 
   async getSubscribers(channelId: string, userId: string, cursor?: string, limit: number = 20) {
@@ -263,7 +263,7 @@ export class ChannelsService {
       [channel.id, userId]
     );
 
-    if (rowCount > 0) {
+    if ((rowCount ?? 0) > 0) {
       const { rows: [cnt] } = await this.pool.query(
         `SELECT COUNT(*)::INT as count FROM chat_members WHERE chat_id = $1`,
         [channel.id]
