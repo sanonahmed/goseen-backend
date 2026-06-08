@@ -8,6 +8,17 @@ import {
 import { Pool } from 'pg';
 import { DB_POOL } from '../database/database.module';
 
+export interface ChannelRow {
+  id: string;
+  type: string;
+  name: string;
+  avatar_url: string | null;
+  username: string | null;
+  is_public: boolean;
+  description: string | null;
+  created_by: string | null;
+}
+
 @Injectable()
 export class ChatsService {
   constructor(@Inject(DB_POOL) private readonly pool: Pool) {}
@@ -58,7 +69,21 @@ export class ChatsService {
   }
 
   async getChatById(chatId: string, userId: string) {
-    await this.assertMember(chatId, userId);
+    const { rows: memberRows } = await this.pool.query(
+      'SELECT id FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId],
+    );
+    if (!memberRows[0]) {
+      // Allow non-members to view public channels (for preview before joining)
+      const { rows: chatRows } = await this.pool.query(
+        'SELECT id, type, is_public FROM chats WHERE id = $1',
+        [chatId],
+      );
+      if (!chatRows[0]) throw new NotFoundException('Chat not found');
+      if (chatRows[0].type !== 'channel' || !chatRows[0].is_public) {
+        throw new ForbiddenException('Not a member of this chat');
+      }
+    }
 
     const { rows } = await this.pool.query(
       `SELECT c.*,
@@ -77,6 +102,7 @@ export class ChatsService {
        GROUP BY c.id`,
       [chatId],
     );
+    if (!rows[0]) throw new NotFoundException('Chat not found');
     return rows[0];
   }
 
@@ -194,6 +220,73 @@ export class ChatsService {
     } finally {
       client.release();
     }
+  }
+
+  // ── Channel search / join / leave ─────────────────────────────────────────
+
+  async searchChannels(query: string): Promise<ChannelRow[]> {
+    if (!query || query.trim().length === 0) return [];
+    const { rows } = await this.pool.query(
+      `SELECT id, type, name, avatar_url,
+              username        AS peer_username,
+              is_public, description, created_by
+       FROM chats
+       WHERE type = 'channel'
+         AND is_public = TRUE
+         AND (name ILIKE $1 OR username ILIKE $1)
+       ORDER BY name
+       LIMIT 20`,
+      [`%${query.trim()}%`],
+    );
+    return rows;
+  }
+
+  async joinChannel(channelId: string, userId: string) {
+    const { rows: chat } = await this.pool.query(
+      'SELECT id, type, is_public FROM chats WHERE id = $1',
+      [channelId],
+    );
+    if (!chat[0]) throw new NotFoundException('Channel not found');
+    if (chat[0].type !== 'channel') throw new BadRequestException('Not a channel');
+    if (!chat[0].is_public) throw new ForbiddenException('Channel is private');
+
+    await this.pool.query(
+      `INSERT INTO chat_members (chat_id, user_id, role)
+       VALUES ($1, $2, 'member')
+       ON CONFLICT (chat_id, user_id) DO NOTHING`,
+      [channelId, userId],
+    );
+
+    const { rows } = await this.pool.query(
+      `SELECT c.id, c.type, c.name, c.avatar_url, c.username, c.is_public,
+              c.description, c.created_by,
+              NULL::text              AS last_message,
+              NULL::timestamptz       AS last_message_time,
+              0                       AS unread_count,
+              FALSE                   AS is_muted,
+              FALSE                   AS is_pinned,
+              FALSE                   AS is_online,
+              FALSE                   AS is_verified
+       FROM chats c
+       WHERE c.id = $1`,
+      [channelId],
+    );
+    return rows[0] ?? { id: channelId, type: 'channel' };
+  }
+
+  async leaveChannel(channelId: string, userId: string): Promise<void> {
+    const { rows } = await this.pool.query(
+      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [channelId, userId],
+    );
+    if (!rows[0]) return; // Already not a member
+    if (rows[0].role === 'owner') {
+      throw new ForbiddenException('Channel owner cannot leave');
+    }
+    await this.pool.query(
+      'DELETE FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [channelId, userId],
+    );
   }
 
   // ── Mark seen ─────────────────────────────────────────────────────────────

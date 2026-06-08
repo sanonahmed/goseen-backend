@@ -2,8 +2,10 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
 } from '@nestjs/common';
@@ -57,6 +59,11 @@ export class ChatsController {
     return this.chats.getChats(req.user.id);
   }
 
+  @Get('channels/search')
+  searchChannels(@Query('q') q: string) {
+    return this.chats.searchChannels(q ?? '');
+  }
+
   @Get(':id')
   getChatById(@Param('id') id: string, @Request() req: any) {
     return this.chats.getChatById(id, req.user.id);
@@ -94,5 +101,15 @@ export class ChatsController {
   @Post(':id/seen')
   markSeen(@Param('id') id: string, @Request() req: any) {
     return this.chats.markSeen(id, req.user.id);
+  }
+
+  @Post(':id/join')
+  joinChannel(@Param('id') id: string, @Request() req: any) {
+    return this.chats.joinChannel(id, req.user.id);
+  }
+
+  @Delete(':id/leave')
+  leaveChannel(@Param('id') id: string, @Request() req: any) {
+    return this.chats.leaveChannel(id, req.user.id);
   }
 }
