@@ -489,10 +489,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   private async authenticate(socket: Socket): Promise<string | null> {
-    const token =
-      (socket.handshake.auth as any)?.token ??
-      socket.handshake.headers.authorization?.replace('Bearer ', '') ??
-      (socket.handshake.query as any)?.token;
+    const authToken = (socket.handshake.auth as any)?.token;
+    const headerToken = socket.handshake.headers.authorization?.replace('Bearer ', '');
+    const queryToken = (socket.handshake.query as any)?.token;
+    const token = authToken ?? headerToken ?? queryToken;
+
+    console.log(`[Auth] sid=${socket.id} auth=${authToken ? 'present' : 'MISSING'} header=${headerToken ? 'present' : 'MISSING'} query=${queryToken ? 'present' : 'MISSING'}`);
 
     if (!token) return null;
     try {
@@ -500,7 +502,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         secret: this.config.get('JWT_ACCESS_SECRET'),
       }) as { sub: string };
       return payload.sub;
-    } catch {
+    } catch (err) {
+      console.warn(`[Auth] jwt.verify failed sid=${socket.id}: ${err}`);
       return null;
     }
   }
