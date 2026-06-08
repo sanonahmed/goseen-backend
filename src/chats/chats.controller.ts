@@ -39,6 +39,7 @@ class CreateGroupDto {
 
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsBoolean() is_public?: boolean;
+  @IsOptional() @IsString() username?: string;
   @IsOptional() @IsString() avatar_url?: string;
 }
 
@@ -109,6 +110,7 @@ export class ChatsController {
       dto.member_ids,
       dto.description,
       dto.is_public,
+      dto.username,
       dto.avatar_url,
     );
   }

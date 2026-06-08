@@ -147,15 +147,16 @@ export class ChatsService {
     memberIds: string[],
     description?: string,
     isPublic = false,
+    username?: string,
     avatarUrl?: string,
   ) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
       const { rows } = await client.query(
-        `INSERT INTO chats (type, name, description, is_public, avatar_url, created_by)
-         VALUES ('group', $1, $2, $3, $4, $5) RETURNING id`,
-        [name, description ?? null, isPublic, avatarUrl ?? null, userId],
+        `INSERT INTO chats (type, name, description, is_public, username, avatar_url, created_by)
+         VALUES ('group', $1, $2, $3, $4, $5, $6) RETURNING id`,
+        [name, description ?? null, isPublic, username ?? null, avatarUrl ?? null, userId],
       );
       const chatId = rows[0].id;
 
@@ -169,7 +170,7 @@ export class ChatsService {
         [chatId, ...allIds],
       );
       await client.query('COMMIT');
-      return { id: chatId, name, type: 'group' };
+      return { id: chatId, name, type: 'group', username: username ?? null };
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
