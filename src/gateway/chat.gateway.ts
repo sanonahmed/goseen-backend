@@ -64,6 +64,8 @@ export const SE = {
   VIDEO_UPGRADE_REQUEST:  'video_upgrade_request',
   VIDEO_UPGRADE_ACCEPTED: 'video_upgrade_accepted',
   VIDEO_UPGRADE_DECLINED: 'video_upgrade_declined',
+  // Server → Client: channel membership changes
+  MEMBER_COUNT_UPDATED: 'member_count_updated',
 } as const;
 
 @WebSocketGateway({

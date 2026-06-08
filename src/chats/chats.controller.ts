@@ -8,6 +8,8 @@ import {
   Query,
   UseGuards,
   Request,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import {
   IsString,
@@ -18,6 +20,7 @@ import {
 } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ChatsService } from './chats.service';
+import { ChatGateway, SE } from '../gateway/chat.gateway';
 
 class CreatePersonalChatDto {
   @IsString()
@@ -52,7 +55,10 @@ class CreateChannelDto {
 @UseGuards(JwtAuthGuard)
 @Controller('chats')
 export class ChatsController {
-  constructor(private readonly chats: ChatsService) {}
+  constructor(
+    private readonly chats: ChatsService,
+    @Inject(forwardRef(() => ChatGateway)) private readonly gateway: ChatGateway,
+  ) {}
 
   @Get()
   getChats(@Request() req: any) {
@@ -104,12 +110,15 @@ export class ChatsController {
   }
 
   @Post(':id/join')
-  joinChannel(@Param('id') id: string, @Request() req: any) {
-    return this.chats.joinChannel(id, req.user.id);
+  async joinChannel(@Param('id') id: string, @Request() req: any) {
+    const result = await this.chats.joinChannel(id, req.user.id);
+    this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { channelId: id, delta: 1 });
+    return result;
   }
 
   @Delete(':id/leave')
-  leaveChannel(@Param('id') id: string, @Request() req: any) {
-    return this.chats.leaveChannel(id, req.user.id);
+  async leaveChannel(@Param('id') id: string, @Request() req: any) {
+    await this.chats.leaveChannel(id, req.user.id);
+    this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { channelId: id, delta: -1 });
   }
 }
