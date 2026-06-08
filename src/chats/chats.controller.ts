@@ -114,12 +114,12 @@ export class ChatsController {
       dto.avatar_url,
     );
 
-    // Join every member's active sockets into the new chat room, then notify
-    // non-creator members so their chat list updates in real time.
+    // Fire-and-forget: join sockets and notify members.
+    // Must not block or throw — group is already committed to DB.
     const allIds = [req.user.id, ...(dto.member_ids ?? [])].filter(
       (id, i, arr) => arr.indexOf(id) === i,
     );
-    await Promise.all(
+    Promise.all(
       allIds.map(async (memberId) => {
         await this.gateway.joinUserToRoom(memberId, result.id);
         if (memberId !== req.user.id) {
@@ -130,7 +130,7 @@ export class ChatsController {
           });
         }
       }),
-    );
+    ).catch((err) => console.error('[createGroup] socket error (non-fatal):', err));
 
     return result;
   }

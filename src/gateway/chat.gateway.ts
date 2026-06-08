@@ -460,12 +460,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
    */
   emitToUser(userId: string, event: string, payload: unknown) {
     const room = `user:${userId}`;
-    const roomSize = this.server.sockets.adapter.rooms.get(room)?.size ?? 0;
-    if (roomSize === 0) {
-      console.warn(`[Gateway] emitToUser – user=${userId} has NO connected sockets, event=${event} dropped`);
-      return;
-    }
-    console.log(`[Gateway] emitToUser userId=${userId} event=${event} sockets=${roomSize}`);
     this.server.to(room).emit(event, payload);
   }
 
