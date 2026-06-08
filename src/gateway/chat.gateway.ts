@@ -54,6 +54,14 @@ export const SE = {
   NEW_NOTIFICATION:     'new_notification',
   CONNECTION_REQUEST:   'connection_request',
   DELIVERED:        'delivered',
+  // Server → Client: Groups
+  GROUP_MEMBER_ADDED:   'group_member_added',
+  GROUP_MEMBER_REMOVED: 'group_member_removed',
+  GROUP_UPDATED:        'group_updated',
+  GROUP_MESSAGE_PINNED: 'group_message_pinned',
+  // Server → Client: Channels
+  CHANNEL_UPDATED:           'channel_updated',
+  CHANNEL_SUBSCRIBER_COUNT:  'channel_subscriber_count',
   // Server → Client: call signaling
   INCOMING_CALL:   'incoming_call',
   CALL_ACCEPTED:   'call_accepted',

@@ -54,14 +54,16 @@ export class MessagesService {
          m.id,
          m.chat_id,
          m.sender_id,
-         u.display_name AS sender_name,
-         u.avatar_url   AS sender_avatar,
+         u.display_name  AS sender_name,
+         u.avatar_url    AS sender_avatar,
          m.type,
          m.text,
          m.media_url,
          m.voice_duration,
          m.reply_to_id,
-         rm.text        AS reply_to_text,
+         rm.text         AS reply_to_text,
+         rm.type         AS reply_to_type,
+         ru.display_name AS reply_to_sender_name,
          m.is_edited,
          m.created_at,
          COALESCE(
@@ -73,6 +75,7 @@ export class MessagesService {
        FROM messages m
        JOIN users u ON u.id = m.sender_id
        LEFT JOIN messages rm ON rm.id = m.reply_to_id
+       LEFT JOIN users ru ON ru.id = rm.sender_id
        LEFT JOIN (
          SELECT message_id,
                 emoji,
@@ -84,7 +87,7 @@ export class MessagesService {
        WHERE m.chat_id = $1
          AND m.is_deleted = FALSE
          ${timeClause}
-       GROUP BY m.id, u.display_name, u.avatar_url, rm.text
+       GROUP BY m.id, u.display_name, u.avatar_url, rm.text, rm.type, ru.display_name
        ORDER BY m.created_at DESC
        LIMIT $2`,
       queryParams,
@@ -94,6 +97,22 @@ export class MessagesService {
 
   async sendMessage(chatId: string, senderId: string, dto: SendMessageDto) {
     await this.chats.assertMember(chatId, senderId);
+
+    // For channels, only admins and owners can post
+    const { rows: [chat] } = await this.pool.query(
+      `SELECT type FROM chats WHERE id = $1`,
+      [chatId]
+    );
+
+    if (chat?.type === 'channel') {
+      const { rows: [member] } = await this.pool.query(
+        `SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2`,
+        [chatId, senderId]
+      );
+      if (!member || !['owner', 'admin'].includes(member.role)) {
+        throw new ForbiddenException('Only admins can post in a channel');
+      }
+    }
 
     const { rows } = await this.pool.query(
       `INSERT INTO messages
@@ -212,9 +231,16 @@ export class MessagesService {
 
   private async getMessageById(id: string, requesterId: string) {
     const { rows } = await this.pool.query(
-      `SELECT m.*, u.display_name AS sender_name, u.avatar_url AS sender_avatar
+      `SELECT m.*,
+              u.display_name  AS sender_name,
+              u.avatar_url    AS sender_avatar,
+              rm.text         AS reply_to_text,
+              rm.type         AS reply_to_type,
+              ru.display_name AS reply_to_sender_name
        FROM messages m
        JOIN users u ON u.id = m.sender_id
+       LEFT JOIN messages rm ON rm.id = m.reply_to_id
+       LEFT JOIN users ru ON ru.id = rm.sender_id
        WHERE m.id = $1`,
       [id],
     );
