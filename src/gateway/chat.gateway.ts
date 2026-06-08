@@ -104,7 +104,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Each socket joins a personal room so emitToUser can target all of a
     // user's devices without maintaining a manual socket-ID Map.
     await socket.join(`user:${userId}`);
-    console.log(`[Socket] connected userId=${userId} sid=${socket.id} transport=${socket.conn.transport.name}`);
+
+    // Auto-join all the user's chat rooms so new_message events reach the
+    // home screen even when no specific chat screen is open.
+    try {
+      const { rows } = await this.pool.query<{ chat_id: string }>(
+        'SELECT chat_id FROM chat_members WHERE user_id = $1',
+        [userId],
+      );
+      await Promise.all(rows.map((r) => socket.join(`chat:${r.chat_id}`)));
+      console.log(`[Socket] connected userId=${userId} sid=${socket.id} transport=${socket.conn.transport.name} autoJoined=${rows.length} rooms`);
+    } catch (err) {
+      console.error(`[Socket] auto-join rooms failed userId=${userId}: ${err}`);
+      console.log(`[Socket] connected userId=${userId} sid=${socket.id} transport=${socket.conn.transport.name}`);
+    }
 
     await this.users.setOnlineStatus(userId, true);
     this.broadcastPresence(userId, true);
