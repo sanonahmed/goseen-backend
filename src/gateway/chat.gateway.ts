@@ -478,7 +478,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private async authenticate(socket: Socket): Promise<string | null> {
     const token =
       (socket.handshake.auth as any)?.token ??
-      socket.handshake.headers.authorization?.replace('Bearer ', '');
+      socket.handshake.headers.authorization?.replace('Bearer ', '') ??
+      (socket.handshake.query as any)?.token;
 
     if (!token) return null;
     try {
