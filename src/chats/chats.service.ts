@@ -361,7 +361,7 @@ export class ChatsService {
     vals.push(channelId);
 
     await this.pool.query(
-      `UPDATE chats SET ${sets.join(', ')} WHERE id = $${i} AND type = 'channel'`,
+      `UPDATE chats SET ${sets.join(', ')} WHERE id = $${i} AND type IN ('channel', 'group')`,
       vals,
     );
   }
