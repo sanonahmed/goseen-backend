@@ -488,14 +488,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       socket.handshake.headers.authorization?.replace('Bearer ', '') ??
       (socket.handshake.query as any)?.token;
 
-    console.log(`[Auth] sid=${socket.id} token=${token ? token.slice(0,20)+'...('+token.length+')' : 'MISSING'}`);
     if (!token) return null;
     try {
       const secret = this.config.get('JWT_ACCESS_SECRET');
       const payload = this.jwt.verify(token, { secret }) as { sub: string };
       return payload.sub;
-    } catch (err) {
-      console.warn(`[Auth] jwt.verify failed sid=${socket.id}: ${err}`);
+    } catch {
       return null;
     }
   }
