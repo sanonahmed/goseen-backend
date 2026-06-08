@@ -66,6 +66,8 @@ export const SE = {
   VIDEO_UPGRADE_DECLINED: 'video_upgrade_declined',
   // Server → Client: channel membership changes
   MEMBER_COUNT_UPDATED: 'member_count_updated',
+  // Server → Client: user was added to a new group
+  NEW_CHAT: 'new_chat',
 } as const;
 
 @WebSocketGateway({
@@ -469,6 +471,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   emitToChat(chatId: string, event: string, payload: unknown) {
     this.server.to(`chat:${chatId}`).emit(event, payload);
+  }
+
+  /** Join all sockets belonging to a user into a chat room.
+   *  Called after adding a user to a group/chat so they receive future messages
+   *  without needing to reconnect.
+   */
+  async joinUserToRoom(userId: string, chatId: string): Promise<void> {
+    const sockets = await this.server.in(`user:${userId}`).fetchSockets();
+    await Promise.all(sockets.map((s) => s.join(`chat:${chatId}`)));
   }
 
   isUserOnline(userId: string): boolean {

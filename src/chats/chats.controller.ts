@@ -103,8 +103,8 @@ export class ChatsController {
   }
 
   @Post('group')
-  createGroup(@Request() req: any, @Body() dto: CreateGroupDto) {
-    return this.chats.createGroup(
+  async createGroup(@Request() req: any, @Body() dto: CreateGroupDto) {
+    const result = await this.chats.createGroup(
       req.user.id,
       dto.name,
       dto.member_ids,
@@ -113,6 +113,26 @@ export class ChatsController {
       dto.username,
       dto.avatar_url,
     );
+
+    // Join every member's active sockets into the new chat room, then notify
+    // non-creator members so their chat list updates in real time.
+    const allIds = [req.user.id, ...(dto.member_ids ?? [])].filter(
+      (id, i, arr) => arr.indexOf(id) === i,
+    );
+    await Promise.all(
+      allIds.map(async (memberId) => {
+        await this.gateway.joinUserToRoom(memberId, result.id);
+        if (memberId !== req.user.id) {
+          this.gateway.emitToUser(memberId, SE.NEW_CHAT, {
+            id: result.id,
+            type: 'group',
+            name: result.name,
+          });
+        }
+      }),
+    );
+
+    return result;
   }
 
   @Post('channel')
