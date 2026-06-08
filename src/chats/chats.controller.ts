@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -49,6 +50,14 @@ class CreateChannelDto {
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsBoolean() is_public?: boolean;
   @IsOptional() @IsString() username?: string;
+  @IsOptional() @IsString() avatar_url?: string;
+}
+
+class UpdateChannelDto {
+  @IsOptional() @IsString() @MinLength(1) name?: string;
+  @IsOptional() description?: string | null;
+  @IsOptional() @IsBoolean() is_public?: boolean;
+  @IsOptional() username?: string | null;
   @IsOptional() @IsString() avatar_url?: string;
 }
 
@@ -109,6 +118,17 @@ export class ChatsController {
       dto.username,
       dto.avatar_url,
     );
+  }
+
+  @Patch(':id')
+  updateChannel(@Param('id') id: string, @Request() req: any, @Body() dto: UpdateChannelDto) {
+    return this.chats.updateChannel(id, req.user.id, {
+      name: dto.name,
+      description: dto.description,
+      isPublic: dto.is_public,
+      username: dto.username,
+      avatarUrl: dto.avatar_url,
+    });
   }
 
   @Post(':id/seen')

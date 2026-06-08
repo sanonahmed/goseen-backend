@@ -289,6 +289,82 @@ export class ChatsService {
     );
   }
 
+  // ── Edit channel ─────────────────────────────────────────────────────────
+
+  async updateChannel(
+    channelId: string,
+    userId: string,
+    updates: {
+      name?: string;
+      description?: string | null;
+      isPublic?: boolean;
+      username?: string | null;
+      avatarUrl?: string | null;
+    },
+  ): Promise<void> {
+    const { rows: member } = await this.pool.query(
+      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [channelId, userId],
+    );
+    if (!member[0] || member[0].role !== 'owner') {
+      throw new ForbiddenException('Only the channel owner can edit this channel');
+    }
+
+    // When going private, always clear username regardless of what was sent
+    const newUsername = updates.isPublic === false ? null : updates.username;
+
+    // Uniqueness check for username — exclude this channel so owner can keep it unchanged
+    if (newUsername) {
+      const { rows } = await this.pool.query(
+        `SELECT 1 FROM users WHERE username = $1
+         UNION ALL
+         SELECT 1 FROM chats WHERE username = $1 AND id != $2
+         LIMIT 1`,
+        [newUsername, channelId],
+      );
+      if (rows.length > 0) throw new BadRequestException('Username already taken');
+    }
+
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+    let i = 1;
+
+    if (updates.name !== undefined) {
+      sets.push(`name = $${i++}`);
+      vals.push(updates.name);
+    }
+    if (updates.description !== undefined) {
+      sets.push(`description = $${i++}`);
+      vals.push(updates.description?.trim() || null);
+    }
+    if (updates.isPublic !== undefined) {
+      sets.push(`is_public = $${i++}`);
+      vals.push(updates.isPublic);
+      if (!updates.isPublic) {
+        // Going private: also clear username
+        sets.push(`username = $${i++}`);
+        vals.push(null);
+      }
+    }
+    if (newUsername !== undefined && updates.isPublic !== false) {
+      sets.push(`username = $${i++}`);
+      vals.push(newUsername || null);
+    }
+    if (updates.avatarUrl !== undefined) {
+      sets.push(`avatar_url = $${i++}`);
+      vals.push(updates.avatarUrl || null);
+    }
+
+    if (sets.length === 0) return;
+    sets.push(`updated_at = NOW()`);
+    vals.push(channelId);
+
+    await this.pool.query(
+      `UPDATE chats SET ${sets.join(', ')} WHERE id = $${i} AND type = 'channel'`,
+      vals,
+    );
+  }
+
   // ── Invite links (private channels) ──────────────────────────────────────
 
   async generateInviteToken(channelId: string, userId: string): Promise<string> {
