@@ -78,8 +78,16 @@ export class MessagesController {
   }
 
   @Delete('chats/:chatId/messages/:msgId')
-  deleteMessage(@Param('msgId') msgId: string, @Request() req: any) {
-    return this.messages.deleteMessage(msgId, req.user.id);
+  async deleteMessage(
+    @Param('chatId') chatId: string,
+    @Param('msgId') msgId: string,
+    @Request() req: any,
+  ) {
+    await this.messages.deleteMessage(msgId, req.user.id);
+    this.gateway.emitToChat(chatId, SE.MSG_DELETED, {
+      chat_id: chatId,
+      message_id: msgId,
+    });
   }
 
   @Post('chats/:chatId/messages/:msgId/reactions')
