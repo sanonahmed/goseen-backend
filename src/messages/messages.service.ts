@@ -98,22 +98,6 @@ export class MessagesService {
   async sendMessage(chatId: string, senderId: string, dto: SendMessageDto) {
     await this.chats.assertMember(chatId, senderId);
 
-    // For channels, only admins and owners can post
-    const { rows: [chat] } = await this.pool.query(
-      `SELECT type FROM chats WHERE id = $1`,
-      [chatId]
-    );
-
-    if (chat?.type === 'channel') {
-      const { rows: [member] } = await this.pool.query(
-        `SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2`,
-        [chatId, senderId]
-      );
-      if (!member || !['owner', 'admin'].includes(member.role)) {
-        throw new ForbiddenException('Only admins can post in a channel');
-      }
-    }
-
     const { rows } = await this.pool.query(
       `INSERT INTO messages
          (chat_id, sender_id, type, text, media_url, media_file_id, reply_to_id, voice_duration)

@@ -3,6 +3,7 @@ import {
   Inject,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { Pool } from 'pg';
 import { DB_POOL } from '../database/database.module';
@@ -143,6 +144,50 @@ export class ChatsService {
       );
       await client.query('COMMIT');
       return { id: chatId, name, type: 'group' };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async createChannel(
+    userId: string,
+    name: string,
+    description?: string,
+    isPublic = false,
+    username?: string,
+    avatarUrl?: string,
+  ) {
+    if (username) {
+      const { rows } = await this.pool.query(
+        `SELECT 1 FROM users WHERE username = $1
+         UNION ALL
+         SELECT 1 FROM chats WHERE username = $1
+         LIMIT 1`,
+        [username],
+      );
+      if (rows.length > 0) {
+        throw new BadRequestException('Username already taken');
+      }
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        `INSERT INTO chats (type, name, description, is_public, username, avatar_url, created_by)
+         VALUES ('channel', $1, $2, $3, $4, $5, $6) RETURNING id`,
+        [name, description ?? null, isPublic, username ?? null, avatarUrl ?? null, userId],
+      );
+      const chatId = rows[0].id;
+      await client.query(
+        `INSERT INTO chat_members (chat_id, user_id, role) VALUES ($1, $2, 'owner')`,
+        [chatId, userId],
+      );
+      await client.query('COMMIT');
+      return { id: chatId, name, type: 'channel', avatar_url: avatarUrl ?? null };
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;

@@ -149,7 +149,10 @@ export class AuthService {
 
   async checkUsernameAvailable(username: string): Promise<boolean> {
     const { rows } = await this.pool.query(
-      'SELECT id FROM users WHERE username = $1',
+      `SELECT 1 FROM users WHERE username = $1
+       UNION ALL
+       SELECT 1 FROM chats WHERE username = $1
+       LIMIT 1`,
       [username],
     );
     return rows.length === 0;

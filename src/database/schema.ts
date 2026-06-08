@@ -2,6 +2,7 @@
 export const MIGRATIONS: string[] = [
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS e2ee_public_key TEXT`,
+  `ALTER TABLE chats ADD COLUMN IF NOT EXISTS username VARCHAR(50) UNIQUE`,
 
   `CREATE TABLE IF NOT EXISTS call_logs (
     id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -18,23 +19,9 @@ export const MIGRATIONS: string[] = [
 
   `CREATE INDEX IF NOT EXISTS idx_call_logs_caller ON call_logs (caller_id, started_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_call_logs_callee ON call_logs (callee_id, started_at DESC)`,
-
-  // Groups and Channels — extend chats table
-  `ALTER TABLE chats ADD COLUMN IF NOT EXISTS username VARCHAR(50) UNIQUE`,
-  `ALTER TABLE chats ADD COLUMN IF NOT EXISTS invite_token VARCHAR(100) UNIQUE`,
-  `ALTER TABLE chats ADD COLUMN IF NOT EXISTS pinned_message_id UUID REFERENCES messages(id) ON DELETE SET NULL`,
-  `ALTER TABLE chats ADD COLUMN IF NOT EXISTS member_count INT NOT NULL DEFAULT 0`,
-
-  `CREATE INDEX IF NOT EXISTS idx_chats_type           ON chats(type)`,
-  `CREATE INDEX IF NOT EXISTS idx_chats_username       ON chats(username) WHERE username IS NOT NULL`,
-  `CREATE INDEX IF NOT EXISTS idx_chats_invite_token   ON chats(invite_token) WHERE invite_token IS NOT NULL`,
-  `CREATE INDEX IF NOT EXISTS idx_chats_search         ON chats USING gin(to_tsvector('simple', coalesce(name,'')))`,
-  `CREATE INDEX IF NOT EXISTS idx_chat_members_role    ON chat_members(chat_id, role)`,
-  `CREATE INDEX IF NOT EXISTS idx_messages_chat_cursor ON messages(chat_id, created_at DESC, id DESC) WHERE is_deleted = FALSE`,
 ];
 
 export const DROP_SCHEMA = `
-DROP TABLE IF EXISTS call_logs          CASCADE;
 DROP TABLE IF EXISTS connections        CASCADE;
 DROP TABLE IF EXISTS notifications      CASCADE;
 DROP TABLE IF EXISTS media_files        CASCADE;
@@ -78,10 +65,6 @@ CREATE TABLE IF NOT EXISTS chats (
   created_by      UUID        REFERENCES users(id) ON DELETE SET NULL,
   last_message_id UUID,
   last_message_at TIMESTAMPTZ,
-  username        VARCHAR(50) UNIQUE,
-  invite_token    VARCHAR(100) UNIQUE,
-  pinned_message_id UUID,
-  member_count    INT         NOT NULL DEFAULT 0,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -186,12 +169,6 @@ CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications (recipient_
 CREATE INDEX IF NOT EXISTS idx_connections_follower  ON connections (follower_id);
 CREATE INDEX IF NOT EXISTS idx_connections_following ON connections (following_id);
 CREATE INDEX IF NOT EXISTS idx_chats_last_msg_at ON chats (last_message_at DESC);
-CREATE INDEX IF NOT EXISTS idx_chats_type ON chats(type);
-CREATE INDEX IF NOT EXISTS idx_chats_username ON chats(username) WHERE username IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_chats_invite_token ON chats(invite_token) WHERE invite_token IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_chats_search ON chats USING gin(to_tsvector('simple', coalesce(name,'')));
-CREATE INDEX IF NOT EXISTS idx_chat_members_role ON chat_members(chat_id, role);
-CREATE INDEX IF NOT EXISTS idx_messages_chat_cursor ON messages(chat_id, created_at DESC, id DESC) WHERE is_deleted = FALSE;
 
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
 BEGIN NEW.updated_at = NOW(); RETURN NEW; END;

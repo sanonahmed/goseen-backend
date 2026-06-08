@@ -36,6 +36,17 @@ class CreateGroupDto {
   @IsOptional() @IsString() avatar_url?: string;
 }
 
+class CreateChannelDto {
+  @IsString()
+  @MinLength(1)
+  name!: string;
+
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsBoolean() is_public?: boolean;
+  @IsOptional() @IsString() username?: string;
+  @IsOptional() @IsString() avatar_url?: string;
+}
+
 @UseGuards(JwtAuthGuard)
 @Controller('chats')
 export class ChatsController {
@@ -64,6 +75,18 @@ export class ChatsController {
       dto.member_ids,
       dto.description,
       dto.is_public,
+      dto.avatar_url,
+    );
+  }
+
+  @Post('channel')
+  createChannel(@Request() req: any, @Body() dto: CreateChannelDto) {
+    return this.chats.createChannel(
+      req.user.id,
+      dto.name,
+      dto.description,
+      dto.is_public,
+      dto.username,
       dto.avatar_url,
     );
   }
