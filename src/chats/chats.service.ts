@@ -301,7 +301,7 @@ export class ChatsService {
     }
     const { rows } = await this.pool.query(
       `UPDATE chats
-       SET invite_token = encode(gen_random_bytes(16), 'hex')
+       SET invite_token = translate(encode(gen_random_bytes(6), 'base64'), '+/', '-_')
        WHERE id = $1 AND type = 'channel'
        RETURNING invite_token`,
       [channelId],
