@@ -365,6 +365,32 @@ export class ChatsService {
     );
   }
 
+  // ── Channel statistics ───────────────────────────────────────────────────
+
+  async getChannelStats(channelId: string, userId: string) {
+    const { rows: member } = await this.pool.query(
+      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [channelId, userId],
+    );
+    if (!member[0] || member[0].role !== 'owner') {
+      throw new ForbiddenException('Only the channel owner can view statistics');
+    }
+
+    const { rows } = await this.pool.query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM chat_members WHERE chat_id = $1)                                                            AS total_subscribers,
+         (SELECT COUNT(*)::int FROM chat_members WHERE chat_id = $1 AND joined_at >= NOW() - INTERVAL '7 days')                AS new_subscribers_7d,
+         (SELECT COUNT(*)::int FROM chat_members WHERE chat_id = $1 AND joined_at >= NOW() - INTERVAL '30 days')               AS new_subscribers_30d,
+         (SELECT COUNT(*)::int FROM messages     WHERE chat_id = $1 AND is_deleted = FALSE)                                    AS total_messages,
+         (SELECT COUNT(*)::int FROM messages     WHERE chat_id = $1 AND is_deleted = FALSE AND created_at >= NOW() - INTERVAL '7 days')  AS messages_7d,
+         (SELECT COUNT(*)::int FROM messages     WHERE chat_id = $1 AND is_deleted = FALSE AND created_at >= NOW() - INTERVAL '30 days') AS messages_30d,
+         (SELECT created_at FROM chats WHERE id = $1)                                                                          AS created_at`,
+      [channelId],
+    );
+
+    return rows[0];
+  }
+
   // ── Invite links (private channels) ──────────────────────────────────────
 
   async generateInviteToken(channelId: string, userId: string): Promise<string> {

@@ -86,6 +86,11 @@ export class ChatsController {
     return result;
   }
 
+  @Get(':id/stats')
+  getChannelStats(@Param('id') id: string, @Request() req: any) {
+    return this.chats.getChannelStats(id, req.user.id);
+  }
+
   @Get(':id')
   getChatById(@Param('id') id: string, @Request() req: any) {
     return this.chats.getChatById(id, req.user.id);
