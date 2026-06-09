@@ -1,6 +1,9 @@
 import { Injectable, Inject, OnModuleInit, Logger } from '@nestjs/common';
 import { Pool } from 'pg';
 import { DB_POOL } from '../database/database.module';
+import { ChatGateway, SE } from '../gateway/chat.gateway';
+import { FcmService } from '../fcm/fcm.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export const GOSEEN_USER_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -8,7 +11,12 @@ export const GOSEEN_USER_ID = '00000000-0000-0000-0000-000000000001';
 export class SystemService implements OnModuleInit {
   private readonly logger = new Logger(SystemService.name);
 
-  constructor(@Inject(DB_POOL) private readonly pool: Pool) {}
+  constructor(
+    @Inject(DB_POOL) private readonly pool: Pool,
+    private readonly gateway: ChatGateway,
+    private readonly fcm: FcmService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async onModuleInit() {
     await this.ensureSystemUser();
@@ -82,26 +90,88 @@ export class SystemService implements OnModuleInit {
 
   private async insertGoSeenMessage(userId: string, text: string): Promise<void> {
     const chatId = await this.getOrCreateGoSeenDm(userId);
-    await this.pool.query(
-      `WITH ins AS (
-         INSERT INTO messages (chat_id, sender_id, type, text)
-         VALUES ($1, $2, 'text', $3)
-         RETURNING id
-       )
-       UPDATE chats
-       SET last_message_id = (SELECT id FROM ins),
-           last_message_at = NOW(),
-           updated_at      = NOW()
-       WHERE id = $1`,
+
+    // Insert message, get the row back.
+    const { rows: msgRows } = await this.pool.query<{
+      id: string;
+      created_at: Date;
+    }>(
+      `INSERT INTO messages (chat_id, sender_id, type, text, mentions)
+       VALUES ($1, $2, 'text', $3, '[]'::jsonb)
+       RETURNING id, created_at`,
       [chatId, GOSEEN_USER_ID, text],
     );
-    // Increment unread for the recipient (not for GoSeen itself)
-    await this.pool.query(
-      `UPDATE chat_members
-       SET unread_count = unread_count + 1
-       WHERE chat_id = $1 AND user_id = $2`,
-      [chatId, userId],
+    const { id: messageId, created_at } = msgRows[0];
+
+    // Update chat metadata and increment recipient's unread in parallel.
+    await Promise.all([
+      this.pool.query(
+        `UPDATE chats
+         SET last_message_id = $2, last_message_at = NOW(), updated_at = NOW()
+         WHERE id = $1`,
+        [chatId, messageId],
+      ),
+      this.pool.query(
+        `UPDATE chat_members SET unread_count = unread_count + 1
+         WHERE chat_id = $1 AND user_id = $2`,
+        [chatId, userId],
+      ),
+    ]);
+
+    // Build the payload exactly as regular messages are broadcast.
+    const payload = {
+      id: messageId,
+      chat_id: chatId,
+      sender_id: GOSEEN_USER_ID,
+      sender_name: 'GoSeen',
+      sender_username: 'goseen',
+      sender_avatar: 'asset://goseen',
+      type: 'text',
+      text,
+      media_url: null,
+      voice_duration: null,
+      reply_to_id: null,
+      reply_to_text: null,
+      reply_to_type: null,
+      reply_to_sender_name: null,
+      is_edited: false,
+      created_at,
+      mentions: [],
+      reactions: [],
+    };
+
+    // Socket: broadcast to the chat room (open chat screen) AND directly to
+    // the user's personal room (handles newly created DMs where the socket
+    // hasn't auto-joined the chat room yet).
+    this.gateway.emitToChat(chatId, SE.NEW_MSG, payload);
+    this.gateway.emitToUser(userId, SE.NEW_MSG, payload);
+
+    // FCM push notification (fire-and-forget).
+    const notifBody = this._previewLine(text);
+    const { rows: tokenRows } = await this.pool.query<{ fcm_token: string | null }>(
+      `SELECT fcm_token FROM users WHERE id = $1`,
+      [userId],
     );
+    const token = tokenRows[0]?.fcm_token;
+    if (token) {
+      this.fcm.sendToTokens([token], { title: 'GoSeen', body: notifBody }, chatId).catch(() => {});
+    }
+
+    // In-app notification for the recipient.
+    this.notifications.create({
+      recipientId: userId,
+      actorId: GOSEEN_USER_ID,
+      type: 'new_message',
+      title: 'GoSeen',
+      body: notifBody,
+      data: { chatId, messageId },
+    }).catch(() => {});
+  }
+
+  /** Returns the first non-blank line of a message, capped at 100 chars. */
+  private _previewLine(text: string): string {
+    const line = text.split('\n').find((l) => l.trim()) ?? text;
+    return line.length > 100 ? line.substring(0, 97) + '…' : line;
   }
 
   /**
