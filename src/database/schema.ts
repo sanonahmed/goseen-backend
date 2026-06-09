@@ -1,6 +1,30 @@
 // Incremental migrations — each entry is idempotent and runs on every deploy.
 export const MIGRATIONS: string[] = [
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token TEXT`,
+  // Create posts table (no-op if already exists from Firebase import)
+  `CREATE TABLE IF NOT EXISTS posts (
+    id         TEXT    PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    created_at BIGINT  NOT NULL DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)::bigint,
+    payload    JSONB   NOT NULL DEFAULT '{}',
+    is_hidden  BOOLEAN NOT NULL DEFAULT false
+  )`,
+  // App-level likes — post_id is TEXT to match posts.id
+  `CREATE TABLE IF NOT EXISTS post_likes (
+    post_id    TEXT        NOT NULL,
+    user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (post_id, user_id)
+  )`,
+  // App-level comments
+  `CREATE TABLE IF NOT EXISTS post_comments (
+    id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    post_id    TEXT        NOT NULL,
+    author_id  UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    text       TEXT        NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_post_likes_post    ON post_likes    (post_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_post_comments_post ON post_comments (post_id, created_at DESC)`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS e2ee_public_key TEXT`,
   `ALTER TABLE chats ADD COLUMN IF NOT EXISTS username VARCHAR(50) UNIQUE`,
   `ALTER TABLE chats ADD COLUMN IF NOT EXISTS invite_token VARCHAR(32) UNIQUE`,

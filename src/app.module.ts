@@ -11,6 +11,8 @@ import { GatewayModule } from './gateway/gateway.module';
 import { FcmModule } from './fcm/fcm.module';
 import { AgoraModule } from './agora/agora.module';
 import { CallModule } from './call/call.module';
+import { PostsModule } from './posts/posts.module';
+import { FeedModule } from './feed/feed.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -27,6 +29,8 @@ import { HealthController } from './health/health.controller';
     FcmModule,
     AgoraModule,
     CallModule,
+    PostsModule,
+    FeedModule,
   ],
   controllers: [HealthController],
 })
