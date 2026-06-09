@@ -45,13 +45,18 @@ export class ChatsService {
          cm.unread_count,
          cm.is_muted,
          cm.is_pinned,
+         cm.role         AS my_role,
          CASE
            WHEN c.type = 'personal' THEN other.is_online
            ELSE FALSE
          END AS is_online,
          other.id        AS peer_id,
          other.username  AS peer_username,
-         other.last_seen AS last_seen
+         other.last_seen AS last_seen,
+         pm.id           AS pinned_msg_id,
+         pm.text         AS pinned_msg_text,
+         pm.type         AS pinned_msg_type,
+         pu.display_name AS pinned_msg_sender
        FROM chat_members cm
        JOIN chats c ON c.id = cm.chat_id
        -- For personal chats, get the other participant
@@ -61,6 +66,10 @@ export class ChatsService {
          ON other.id = cm2.user_id
        LEFT JOIN messages m
          ON m.id = c.last_message_id AND m.is_deleted = FALSE
+       LEFT JOIN messages pm
+         ON pm.id = c.pinned_message_id AND pm.is_deleted = FALSE
+       LEFT JOIN users pu
+         ON pu.id = pm.sender_id
        WHERE cm.user_id = $1
        ORDER BY cm.is_pinned DESC, c.last_message_at DESC NULLS LAST`,
       [userId],
@@ -94,12 +103,20 @@ export class ChatsService {
                 'avatar_url',   u.avatar_url,
                 'is_online',    u.is_online,
                 'role',         cm.role
-              )) AS members
+              )) AS members,
+              CASE WHEN pm.id IS NOT NULL THEN json_build_object(
+                'id',          pm.id,
+                'text',        pm.text,
+                'type',        pm.type,
+                'sender_name', pu.display_name
+              ) ELSE NULL END AS pinned_message
        FROM chats c
        JOIN chat_members cm ON cm.chat_id = c.id
        JOIN users u         ON u.id = cm.user_id
+       LEFT JOIN messages pm ON pm.id = c.pinned_message_id AND pm.is_deleted = FALSE
+       LEFT JOIN users pu    ON pu.id = pm.sender_id
        WHERE c.id = $1
-       GROUP BY c.id`,
+       GROUP BY c.id, pm.id, pm.text, pm.type, pu.display_name`,
       [chatId],
     );
     if (!rows[0]) throw new NotFoundException('Chat not found');
@@ -237,6 +254,68 @@ export class ChatsService {
     await this.pool.query(
       'UPDATE chat_members SET role = $3 WHERE chat_id = $1 AND user_id = $2',
       [chatId, targetUserId, newRole],
+    );
+  }
+
+  async pinMessage(chatId: string, requesterId: string, messageId: string) {
+    const { rows: chat } = await this.pool.query(
+      'SELECT id, type FROM chats WHERE id = $1',
+      [chatId],
+    );
+    if (!chat[0]) throw new NotFoundException('Chat not found');
+    if (chat[0].type !== 'group') throw new BadRequestException('Only group messages can be pinned');
+
+    const { rows: member } = await this.pool.query(
+      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [chatId, requesterId],
+    );
+    if (!member[0] || (member[0].role !== 'owner' && member[0].role !== 'admin')) {
+      throw new ForbiddenException('Only admins and owners can pin messages');
+    }
+
+    const { rows: msg } = await this.pool.query(
+      'SELECT id, text, type, sender_id FROM messages WHERE id = $1 AND chat_id = $2 AND is_deleted = FALSE',
+      [messageId, chatId],
+    );
+    if (!msg[0]) throw new NotFoundException('Message not found');
+
+    await this.pool.query(
+      'UPDATE chats SET pinned_message_id = $2 WHERE id = $1',
+      [chatId, messageId],
+    );
+
+    const { rows: sender } = await this.pool.query(
+      'SELECT display_name FROM users WHERE id = $1',
+      [msg[0].sender_id],
+    );
+
+    return {
+      id: msg[0].id,
+      text: msg[0].text,
+      type: msg[0].type,
+      sender_name: sender[0]?.display_name ?? '',
+    };
+  }
+
+  async unpinMessage(chatId: string, requesterId: string) {
+    const { rows: chat } = await this.pool.query(
+      'SELECT id, type FROM chats WHERE id = $1',
+      [chatId],
+    );
+    if (!chat[0]) throw new NotFoundException('Chat not found');
+    if (chat[0].type !== 'group') throw new BadRequestException('Not a group');
+
+    const { rows: member } = await this.pool.query(
+      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [chatId, requesterId],
+    );
+    if (!member[0] || (member[0].role !== 'owner' && member[0].role !== 'admin')) {
+      throw new ForbiddenException('Only admins and owners can unpin messages');
+    }
+
+    await this.pool.query(
+      'UPDATE chats SET pinned_message_id = NULL WHERE id = $1',
+      [chatId],
     );
   }
 

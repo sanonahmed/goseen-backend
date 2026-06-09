@@ -68,6 +68,9 @@ export const SE = {
   MEMBER_COUNT_UPDATED: 'member_count_updated',
   // Server → Client: user was added to a new group
   NEW_CHAT: 'new_chat',
+  // Server → Client: a message was pinned or unpinned in a group
+  MESSAGE_PINNED:   'message_pinned',
+  MESSAGE_UNPINNED: 'message_unpinned',
 } as const;
 
 @WebSocketGateway({

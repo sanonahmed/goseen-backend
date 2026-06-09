@@ -38,6 +38,11 @@ class UpdateMemberRoleDto {
   role!: string;
 }
 
+class PinMessageDto {
+  @IsString()
+  message_id!: string;
+}
+
 class CreateGroupDto {
   @IsString()
   @MinLength(1)
@@ -209,6 +214,23 @@ export class ChatsController {
   ) {
     await this.chats.removeGroupMember(id, req.user.id, userId);
     this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { chatId: id, delta: -1 });
+  }
+
+  @Post(':id/pin')
+  async pinMessage(
+    @Param('id') id: string,
+    @Body() body: PinMessageDto,
+    @Request() req: any,
+  ) {
+    const pinned = await this.chats.pinMessage(id, req.user.id, body.message_id);
+    this.gateway.emitToChat(id, SE.MESSAGE_PINNED, { chatId: id, message: pinned });
+    return pinned;
+  }
+
+  @Delete(':id/pin')
+  async unpinMessage(@Param('id') id: string, @Request() req: any) {
+    await this.chats.unpinMessage(id, req.user.id);
+    this.gateway.emitToChat(id, SE.MESSAGE_UNPINNED, { chatId: id });
   }
 
   @Delete(':id/leave')
