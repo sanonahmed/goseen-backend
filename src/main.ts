@@ -2,10 +2,33 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
+import { Pool } from 'pg';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
+import { INITIAL_SCHEMA, MIGRATIONS } from './database/schema';
+
+async function applyMigrations() {
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL ?? process.env.POSTGRES_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  });
+  try {
+    await pool.query(INITIAL_SCHEMA);
+    for (const sql of MIGRATIONS) {
+      await pool.query(sql);
+    }
+    console.log('[migration] Schema up to date');
+  } catch (err) {
+    console.error('[migration] Failed:', err);
+    throw err;
+  } finally {
+    await pool.end();
+  }
+}
 
 async function bootstrap() {
+  await applyMigrations();
+
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api/v1');
