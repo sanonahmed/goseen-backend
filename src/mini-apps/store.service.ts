@@ -162,8 +162,8 @@ export class StoreService {
          AND (
            ma.status = 'published'
            OR (
-             $2 IS NOT NULL
-             AND da.user_id = $2
+             $2::text IS NOT NULL
+             AND da.user_id = $2::uuid
            )
          )`,
       [slug, userId ?? null],
