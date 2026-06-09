@@ -204,6 +204,42 @@ export class ChatsService {
     );
   }
 
+  async updateMemberRole(
+    chatId: string,
+    requesterId: string,
+    targetUserId: string,
+    newRole: 'admin' | 'member',
+  ) {
+    const { rows: chat } = await this.pool.query(
+      'SELECT id, type FROM chats WHERE id = $1',
+      [chatId],
+    );
+    if (!chat[0]) throw new NotFoundException('Group not found');
+    if (chat[0].type !== 'group') throw new BadRequestException('Not a group');
+
+    const { rows: requester } = await this.pool.query(
+      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [chatId, requesterId],
+    );
+    if (!requester[0] || requester[0].role !== 'owner') {
+      throw new ForbiddenException('Only group owners can change member roles');
+    }
+
+    const { rows: target } = await this.pool.query(
+      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [chatId, targetUserId],
+    );
+    if (!target[0]) throw new NotFoundException('Member not found in group');
+    if (target[0].role === 'owner') {
+      throw new BadRequestException("Cannot change the owner's role");
+    }
+
+    await this.pool.query(
+      'UPDATE chat_members SET role = $3 WHERE chat_id = $1 AND user_id = $2',
+      [chatId, targetUserId, newRole],
+    );
+  }
+
   async addGroupMember(chatId: string, requesterId: string, newUserId: string) {
     const { rows: chat } = await this.pool.query(
       'SELECT id, type FROM chats WHERE id = $1',

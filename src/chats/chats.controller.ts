@@ -33,6 +33,11 @@ class AddGroupMemberDto {
   user_id!: string;
 }
 
+class UpdateMemberRoleDto {
+  @IsString()
+  role!: string;
+}
+
 class CreateGroupDto {
   @IsString()
   @MinLength(1)
@@ -184,6 +189,16 @@ export class ChatsController {
     await this.chats.addGroupMember(id, req.user.id, body.user_id);
     this.gateway.emitToUser(body.user_id, SE.NEW_CHAT, { chatId: id });
     this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { chatId: id, delta: 1 });
+  }
+
+  @Patch(':id/members/:userId')
+  async updateMemberRole(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Body() body: UpdateMemberRoleDto,
+    @Request() req: any,
+  ) {
+    await this.chats.updateMemberRole(id, req.user.id, userId, body.role as 'admin' | 'member');
   }
 
   @Delete(':id/members/:userId')
