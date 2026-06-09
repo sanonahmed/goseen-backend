@@ -143,6 +143,7 @@ export class StoreService {
   }
 
   async getBySlug(slug: string, userId?: string) {
+    // Allow the app's own developer to view their app regardless of status
     const { rows } = await this.pool.query(
       `SELECT
          ma.id, ma.slug, ma.name, ma.short_description, ma.description,
@@ -157,8 +158,15 @@ export class StoreService {
        FROM mini_apps ma
        JOIN developer_accounts da ON da.id = ma.developer_id
        LEFT JOIN mini_app_versions mv ON mv.id = ma.current_version_id
-       WHERE ma.slug = $1 AND ma.status = 'published'`,
-      [slug],
+       WHERE ma.slug = $1
+         AND (
+           ma.status = 'published'
+           OR (
+             $2 IS NOT NULL
+             AND da.user_id = $2
+           )
+         )`,
+      [slug, userId ?? null],
     );
     if (!rows[0]) throw new NotFoundException('Mini app not found');
 

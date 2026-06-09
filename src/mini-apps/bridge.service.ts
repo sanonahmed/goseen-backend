@@ -29,7 +29,14 @@ export class BridgeService {
     );
     if (!appRows[0]) throw new NotFoundException('Mini app not found');
     if (appRows[0].status !== 'published') {
-      throw new BadRequestException('Mini app is not published');
+      // Allow the app's own developer to create a preview session
+      const { rows: devRows } = await this.pool.query(
+        `SELECT 1 FROM developer_accounts WHERE user_id = $1 AND id = (
+           SELECT developer_id FROM mini_apps WHERE id = $2
+         )`,
+        [userId, miniAppId],
+      );
+      if (!devRows[0]) throw new BadRequestException('Mini app is not published');
     }
 
     // Fetch user info for signing

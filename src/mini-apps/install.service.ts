@@ -51,10 +51,14 @@ export class InstallService {
   }
 
   async install(userId: string, miniAppId: string) {
-    // Verify app exists and is published
+    // Verify app exists — published for regular users, or own developer's app
     const { rows: appRows } = await this.pool.query(
-      `SELECT id, current_version_id FROM mini_apps WHERE id = $1 AND status = 'published'`,
-      [miniAppId],
+      `SELECT ma.id, ma.current_version_id
+       FROM mini_apps ma
+       LEFT JOIN developer_accounts da ON da.id = ma.developer_id
+       WHERE ma.id = $1
+         AND (ma.status = 'published' OR da.user_id = $2)`,
+      [miniAppId, userId],
     );
     if (!appRows[0]) throw new NotFoundException('Mini app not found or not published');
 
