@@ -215,10 +215,19 @@ export class ChatsService {
       throw new BadRequestException('Owner cannot remove themselves');
     }
 
+    const { rows: users } = await this.pool.query(
+      'SELECT id, display_name FROM users WHERE id = ANY($1)',
+      [[requesterId, targetUserId]],
+    );
+    const actorName = users.find((r) => r.id === requesterId)?.display_name ?? 'Someone';
+    const targetName = users.find((r) => r.id === targetUserId)?.display_name ?? 'a user';
+
     await this.pool.query(
       'DELETE FROM chat_members WHERE chat_id = $1 AND user_id = $2',
       [chatId, targetUserId],
     );
+
+    return this.insertSystemMessage(chatId, requesterId, `${actorName} removed ${targetName}`);
   }
 
   async updateMemberRole(
@@ -255,6 +264,18 @@ export class ChatsService {
       'UPDATE chat_members SET role = $3 WHERE chat_id = $1 AND user_id = $2',
       [chatId, targetUserId, newRole],
     );
+
+    const { rows: users } = await this.pool.query(
+      'SELECT id, display_name FROM users WHERE id = ANY($1)',
+      [[requesterId, targetUserId]],
+    );
+    const actorName = users.find((r) => r.id === requesterId)?.display_name ?? 'Someone';
+    const targetName = users.find((r) => r.id === targetUserId)?.display_name ?? 'a user';
+    const text = newRole === 'admin'
+      ? `${actorName} made ${targetName} an admin`
+      : `${actorName} removed ${targetName}'s admin rights`;
+
+    return this.insertSystemMessage(chatId, requesterId, text);
   }
 
   async pinMessage(chatId: string, requesterId: string, messageId: string) {
@@ -284,17 +305,21 @@ export class ChatsService {
       [chatId, messageId],
     );
 
-    const { rows: sender } = await this.pool.query(
-      'SELECT display_name FROM users WHERE id = $1',
-      [msg[0].sender_id],
+    const { rows: users } = await this.pool.query(
+      'SELECT id, display_name FROM users WHERE id = ANY($1)',
+      [[requesterId, msg[0].sender_id]],
     );
+    const actorName = users.find((r) => r.id === requesterId)?.display_name ?? 'Someone';
+    const senderName = users.find((r) => r.id === msg[0].sender_id)?.display_name ?? '';
 
-    return {
+    const pinned = {
       id: msg[0].id,
       text: msg[0].text,
       type: msg[0].type,
-      sender_name: sender[0]?.display_name ?? '',
+      sender_name: senderName,
     };
+    const systemMsg = await this.insertSystemMessage(chatId, requesterId, `${actorName} pinned a message`);
+    return { pinned, systemMsg };
   }
 
   async unpinMessage(chatId: string, requesterId: string) {
@@ -317,6 +342,13 @@ export class ChatsService {
       'UPDATE chats SET pinned_message_id = NULL WHERE id = $1',
       [chatId],
     );
+
+    const { rows: actor } = await this.pool.query(
+      'SELECT display_name FROM users WHERE id = $1',
+      [requesterId],
+    );
+    const actorName = actor[0]?.display_name ?? 'Someone';
+    return this.insertSystemMessage(chatId, requesterId, `${actorName} unpinned a message`);
   }
 
   async addGroupMember(chatId: string, requesterId: string, newUserId: string) {
@@ -335,12 +367,21 @@ export class ChatsService {
       throw new ForbiddenException('Only group owners can add members');
     }
 
+    const { rows: users } = await this.pool.query(
+      'SELECT id, display_name FROM users WHERE id = ANY($1)',
+      [[requesterId, newUserId]],
+    );
+    const actorName = users.find((r) => r.id === requesterId)?.display_name ?? 'Someone';
+    const targetName = users.find((r) => r.id === newUserId)?.display_name ?? 'a user';
+
     await this.pool.query(
       `INSERT INTO chat_members (chat_id, user_id, role)
        VALUES ($1, $2, 'member')
        ON CONFLICT (chat_id, user_id) DO NOTHING`,
       [chatId, newUserId],
     );
+
+    return this.insertSystemMessage(chatId, requesterId, `${actorName} added ${targetName}`);
   }
 
   async createChannel(
@@ -632,6 +673,41 @@ export class ChatsService {
        WHERE chat_id = $1 AND user_id = $2`,
       [chatId, userId],
     );
+  }
+
+  // ── System messages ──────────────────────────────────────────────────────
+
+  /** Inserts a system announcement message (type = 'system'), updates the
+   *  chat's last_message_id, and increments unread for everyone except the
+   *  actor. Returns the full row with sender info ready for socket broadcast. */
+  async insertSystemMessage(
+    chatId: string,
+    actorId: string,
+    text: string,
+  ): Promise<Record<string, unknown>> {
+    const { rows } = await this.pool.query(
+      `WITH ins AS (
+         INSERT INTO messages (chat_id, sender_id, type, text)
+         VALUES ($1, $2, 'system', $3)
+         RETURNING *
+       ), upd AS (
+         UPDATE chats c
+         SET last_message_id = (SELECT id FROM ins),
+             last_message_at = NOW(),
+             updated_at      = NOW()
+         WHERE c.id = $1
+       )
+       SELECT ins.*,
+              u.display_name AS sender_name,
+              u.avatar_url   AS sender_avatar,
+              u.username     AS sender_username
+       FROM ins
+       JOIN users u ON u.id = ins.sender_id`,
+      [chatId, actorId, text],
+    );
+    if (!rows[0]) throw new Error('System message insertion failed');
+    await this.incrementUnread(chatId, actorId);
+    return { ...rows[0], reactions: [], is_edited: false };
   }
 
   // ── Helper ────────────────────────────────────────────────────────────────

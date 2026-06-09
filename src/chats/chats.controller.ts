@@ -129,23 +129,32 @@ export class ChatsController {
       dto.avatar_url,
     );
 
-    // Fire-and-forget: join sockets and notify members.
+    // Fire-and-forget: join sockets, notify members, then broadcast "Group created".
     // Must not block or throw — group is already committed to DB.
     const allIds = [req.user.id, ...(dto.member_ids ?? [])].filter(
       (id, i, arr) => arr.indexOf(id) === i,
     );
-    Promise.all(
-      allIds.map(async (memberId) => {
-        await this.gateway.joinUserToRoom(memberId, result.id);
-        if (memberId !== req.user.id) {
-          this.gateway.emitToUser(memberId, SE.NEW_CHAT, {
-            id: result.id,
-            type: 'group',
-            name: result.name,
-          });
-        }
-      }),
-    ).catch((err) => console.error('[createGroup] socket error (non-fatal):', err));
+    (async () => {
+      try {
+        await Promise.all(
+          allIds.map(async (memberId) => {
+            await this.gateway.joinUserToRoom(memberId, result.id);
+            if (memberId !== req.user.id) {
+              this.gateway.emitToUser(memberId, SE.NEW_CHAT, {
+                id: result.id,
+                type: 'group',
+                name: result.name,
+              });
+            }
+          }),
+        );
+        // All members are in the room now — safe to broadcast system message.
+        const sysMsg = await this.chats.insertSystemMessage(result.id, req.user.id, 'Group created');
+        this.gateway.emitToChat(result.id, SE.NEW_MSG, { ...sysMsg, chat_id: result.id });
+      } catch (err) {
+        console.error('[createGroup] socket/system-msg error (non-fatal):', err);
+      }
+    })();
 
     return result;
   }
@@ -191,9 +200,11 @@ export class ChatsController {
     @Body() body: AddGroupMemberDto,
     @Request() req: any,
   ) {
-    await this.chats.addGroupMember(id, req.user.id, body.user_id);
+    const sysMsg = await this.chats.addGroupMember(id, req.user.id, body.user_id);
+    await this.gateway.joinUserToRoom(body.user_id, id);
     this.gateway.emitToUser(body.user_id, SE.NEW_CHAT, { chatId: id });
     this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { chatId: id, delta: 1 });
+    this.gateway.emitToChat(id, SE.NEW_MSG, { ...sysMsg, chat_id: id });
   }
 
   @Patch(':id/members/:userId')
@@ -203,7 +214,8 @@ export class ChatsController {
     @Body() body: UpdateMemberRoleDto,
     @Request() req: any,
   ) {
-    await this.chats.updateMemberRole(id, req.user.id, userId, body.role as 'admin' | 'member');
+    const sysMsg = await this.chats.updateMemberRole(id, req.user.id, userId, body.role as 'admin' | 'member');
+    this.gateway.emitToChat(id, SE.NEW_MSG, { ...sysMsg, chat_id: id });
   }
 
   @Delete(':id/members/:userId')
@@ -212,8 +224,9 @@ export class ChatsController {
     @Param('userId') userId: string,
     @Request() req: any,
   ) {
-    await this.chats.removeGroupMember(id, req.user.id, userId);
+    const sysMsg = await this.chats.removeGroupMember(id, req.user.id, userId);
     this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { chatId: id, delta: -1 });
+    this.gateway.emitToChat(id, SE.NEW_MSG, { ...sysMsg, chat_id: id });
   }
 
   @Post(':id/pin')
@@ -222,15 +235,17 @@ export class ChatsController {
     @Body() body: PinMessageDto,
     @Request() req: any,
   ) {
-    const pinned = await this.chats.pinMessage(id, req.user.id, body.message_id);
+    const { pinned, systemMsg } = await this.chats.pinMessage(id, req.user.id, body.message_id);
     this.gateway.emitToChat(id, SE.MESSAGE_PINNED, { chatId: id, message: pinned });
+    this.gateway.emitToChat(id, SE.NEW_MSG, { ...systemMsg, chat_id: id });
     return pinned;
   }
 
   @Delete(':id/pin')
   async unpinMessage(@Param('id') id: string, @Request() req: any) {
-    await this.chats.unpinMessage(id, req.user.id);
+    const sysMsg = await this.chats.unpinMessage(id, req.user.id);
     this.gateway.emitToChat(id, SE.MESSAGE_UNPINNED, { chatId: id });
+    this.gateway.emitToChat(id, SE.NEW_MSG, { ...sysMsg, chat_id: id });
   }
 
   @Delete(':id/leave')
