@@ -45,6 +45,9 @@ export const MIGRATIONS: string[] = [
 
   `CREATE INDEX IF NOT EXISTS idx_call_logs_caller ON call_logs (caller_id, started_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_call_logs_callee ON call_logs (callee_id, started_at DESC)`,
+
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_official BOOLEAN NOT NULL DEFAULT FALSE`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin    BOOLEAN NOT NULL DEFAULT FALSE`,
 ];
 
 export const DROP_SCHEMA = `

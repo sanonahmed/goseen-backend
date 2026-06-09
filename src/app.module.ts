@@ -13,6 +13,7 @@ import { AgoraModule } from './agora/agora.module';
 import { CallModule } from './call/call.module';
 import { PostsModule } from './posts/posts.module';
 import { FeedModule } from './feed/feed.module';
+import { AdminModule } from './admin/admin.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -31,6 +32,7 @@ import { HealthController } from './health/health.controller';
     CallModule,
     PostsModule,
     FeedModule,
+    AdminModule,
   ],
   controllers: [HealthController],
 })

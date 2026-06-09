@@ -50,9 +50,10 @@ export class ChatsService {
            WHEN c.type = 'personal' THEN other.is_online
            ELSE FALSE
          END AS is_online,
-         other.id        AS peer_id,
-         other.username  AS peer_username,
-         other.last_seen AS last_seen,
+         other.id         AS peer_id,
+         other.username   AS peer_username,
+         other.last_seen  AS last_seen,
+         COALESCE(other.is_official, FALSE) AS is_verified,
          pm.id           AS pinned_msg_id,
          pm.text         AS pinned_msg_text,
          pm.type         AS pinned_msg_type,

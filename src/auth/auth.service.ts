@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcryptjs';
 import { DB_POOL } from '../database/database.module';
+import { SystemService } from '../system/system.service';
 
 interface DbUser {
   id: string;
@@ -27,6 +28,7 @@ export class AuthService {
     @Inject(DB_POOL) private readonly pool: Pool,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly system: SystemService,
   ) {}
 
   async sendOtp(email: string): Promise<void> {
@@ -80,6 +82,16 @@ export class AuthService {
       'UPDATE users SET otp_code = NULL, otp_expires_at = NULL, updated_at = NOW() WHERE id = $1',
       [user.id],
     );
+
+    // Returning users (have completed profile setup) get a security login alert.
+    if (user.display_name) {
+      const time = new Date().toLocaleString('en-US', {
+        timeZone: 'UTC',
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }) + ' UTC';
+      this.system.sendLoginAlert(user.id, time).catch(() => {});
+    }
 
     return this.issueTokens(user);
   }
@@ -135,6 +147,8 @@ export class AuthService {
        RETURNING *`,
       [displayName, avatarUrl ?? null, userId],
     );
+    // Send welcome message on first profile setup (idempotent — no-op if already sent).
+    this.system.sendWelcomeMessage(userId).catch(() => {});
     return this.toPublicUser(rows[0]);
   }
 
