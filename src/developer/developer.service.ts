@@ -416,9 +416,12 @@ export class DeveloperService implements OnModuleInit {
       `INSERT INTO app_review_queue (version_id, mini_app_id) VALUES ($1, $2)`,
       [versionId, appId],
     );
+    // Set current_version_id so developers can preview the app immediately
     await this.pool.query(
-      `UPDATE mini_apps SET status = 'pending_review', updated_at = NOW() WHERE id = $1`,
-      [appId],
+      `UPDATE mini_apps
+       SET current_version_id = $1, status = 'pending_review', updated_at = NOW()
+       WHERE id = $2`,
+      [versionId, appId],
     );
 
     console.log(`[Developer] hosted version submitted app=${appId} v=${version}`);
