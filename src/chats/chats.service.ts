@@ -452,14 +452,18 @@ export class ChatsService {
     return rows;
   }
 
-  async joinChannel(channelId: string, userId: string) {
+  async joinChannel(
+    channelId: string,
+    userId: string,
+  ): Promise<{ chat: Record<string, unknown>; sysMsg?: Record<string, unknown> }> {
     const { rows: chat } = await this.pool.query(
       'SELECT id, type, is_public FROM chats WHERE id = $1',
       [channelId],
     );
     if (!chat[0]) throw new NotFoundException('Channel not found');
-    if (chat[0].type !== 'channel') throw new BadRequestException('Not a channel');
-    if (!chat[0].is_public) throw new ForbiddenException('Channel is private');
+    if (!['channel', 'group'].includes(chat[0].type))
+      throw new BadRequestException('Cannot join this chat');
+    if (!chat[0].is_public) throw new ForbiddenException('This chat is private');
 
     await this.pool.query(
       `INSERT INTO chat_members (chat_id, user_id, role)
@@ -482,7 +486,23 @@ export class ChatsService {
        WHERE c.id = $1`,
       [channelId],
     );
-    return rows[0] ?? { id: channelId, type: 'channel' };
+    const chatResult = rows[0] ?? { id: channelId, type: chat[0].type };
+
+    if (chat[0].type === 'group') {
+      const { rows: u } = await this.pool.query(
+        'SELECT display_name FROM users WHERE id = $1',
+        [userId],
+      );
+      const actorName = (u[0]?.display_name as string) ?? 'Someone';
+      const sysMsg = await this.insertSystemMessage(
+        channelId,
+        userId,
+        `${actorName} joined the group`,
+      );
+      return { chat: chatResult, sysMsg };
+    }
+
+    return { chat: chatResult };
   }
 
   async leaveChannel(channelId: string, userId: string): Promise<void> {

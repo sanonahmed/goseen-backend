@@ -32,7 +32,23 @@ export class MessagesService {
     limit = 40,
     beforeId?: string,
   ) {
-    await this.chats.assertMember(chatId, userId);
+    const { rows: memberRows } = await this.pool.query(
+      'SELECT id FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId],
+    );
+    if (!memberRows[0]) {
+      const { rows: chatRows } = await this.pool.query(
+        'SELECT is_public, type FROM chats WHERE id = $1',
+        [chatId],
+      );
+      if (
+        !chatRows[0] ||
+        !chatRows[0].is_public ||
+        !['channel', 'group'].includes(chatRows[0].type)
+      ) {
+        throw new ForbiddenException('Not a member of this chat');
+      }
+    }
 
     let timeClause = '';
     // params: $1=chatId, $2=limit, $3=userId, $4=beforeCursor (optional)
