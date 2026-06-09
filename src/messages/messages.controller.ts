@@ -14,11 +14,17 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { IsString, IsOptional, IsNumber, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsNumber, IsArray, ValidateNested, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { MessagesService } from './messages.service';
 import { ChatsService } from '../chats/chats.service';
 import { ChatGateway, SE } from '../gateway/chat.gateway';
+
+class MentionDto {
+  @IsString() id!: string;
+  @IsString() username!: string;
+}
 
 class SendMessageDto {
   @IsOptional() @IsString() text?: string;
@@ -27,6 +33,7 @@ class SendMessageDto {
   @IsOptional() @IsString() media_file_id?: string;
   @IsOptional() @IsString() reply_to_id?: string;
   @IsOptional() @IsNumber() voice_duration?: number;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => MentionDto) mentions?: MentionDto[];
 }
 
 class EditMessageDto {

@@ -115,6 +115,51 @@ export class FcmService implements OnModuleInit {
   }
 
   /**
+   * Send a push notification to specific mentioned users (bypasses mute).
+   * Fire-and-forget — never throws.
+   */
+  async notifyMentionedUsers(
+    chatId: string,
+    senderId: string,
+    userIds: string[],
+    payload: { title: string; body: string },
+  ): Promise<void> {
+    if (!this.ready || userIds.length === 0) return;
+    try {
+      const placeholders = userIds.map((_, i) => `$${i + 2}`).join(', ');
+      const { rows } = await this.pool.query<{ fcm_token: string | null }>(
+        `SELECT u.fcm_token
+         FROM users u
+         WHERE u.id = ANY(ARRAY[${placeholders}]::uuid[])
+           AND u.id != $1
+           AND u.fcm_token IS NOT NULL`,
+        [senderId, ...userIds],
+      );
+      const tokens = rows.map((r) => r.fcm_token).filter((t): t is string => !!t);
+      if (tokens.length === 0) return;
+      await Promise.allSettled(
+        tokens.map((token) =>
+          admin.messaging().send({
+            token,
+            notification: { title: payload.title, body: payload.body },
+            data: { chat_id: chatId, mention: 'true' },
+            android: {
+              priority: 'high',
+              notification: { channelId: 'goseen_messages' },
+            },
+            apns: {
+              headers: { 'apns-priority': '10' },
+              payload: { aps: { sound: 'default', contentAvailable: true } },
+            },
+          }),
+        ),
+      );
+    } catch (err) {
+      this.logger.error('FCM mention push failed', err);
+    }
+  }
+
+  /**
    * Send a push notification to all chat members except the sender.
    * Fire-and-forget — never throws.
    */

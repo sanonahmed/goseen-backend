@@ -3,11 +3,17 @@ import {
   Inject,
   NotFoundException,
   ForbiddenException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { Pool } from 'pg';
 import { DB_POOL } from '../database/database.module';
 import { ChatsService } from '../chats/chats.service';
 import { FcmService } from '../fcm/fcm.service';
+
+export interface MentionDto {
+  id: string;
+  username: string;
+}
 
 export interface SendMessageDto {
   text?: string;
@@ -16,15 +22,22 @@ export interface SendMessageDto {
   media_file_id?: string;
   reply_to_id?: string;
   voice_duration?: number;
+  mentions?: MentionDto[];
 }
 
 @Injectable()
-export class MessagesService {
+export class MessagesService implements OnModuleInit {
   constructor(
     @Inject(DB_POOL) private readonly pool: Pool,
     private readonly chats: ChatsService,
     private readonly fcm: FcmService,
   ) {}
+
+  async onModuleInit() {
+    await this.pool.query(
+      `ALTER TABLE messages ADD COLUMN IF NOT EXISTS mentions JSONB NOT NULL DEFAULT '[]'::jsonb`,
+    );
+  }
 
   async getMessages(
     chatId: string,
@@ -82,6 +95,7 @@ export class MessagesService {
          ru.display_name AS reply_to_sender_name,
          m.is_edited,
          m.created_at,
+         COALESCE(m.mentions, '[]'::jsonb) AS mentions,
          COALESCE(
            json_agg(
              json_build_object('emoji', mr.emoji, 'count', mr.cnt, 'reacted_by_me', mr.reacted_by_me)
@@ -114,10 +128,12 @@ export class MessagesService {
   async sendMessage(chatId: string, senderId: string, dto: SendMessageDto) {
     await this.chats.assertMember(chatId, senderId);
 
+    const mentions: MentionDto[] = Array.isArray(dto.mentions) ? dto.mentions : [];
+
     const { rows } = await this.pool.query(
       `INSERT INTO messages
-         (chat_id, sender_id, type, text, media_url, media_file_id, reply_to_id, voice_duration)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         (chat_id, sender_id, type, text, media_url, media_file_id, reply_to_id, voice_duration, mentions)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
         chatId,
@@ -128,6 +144,7 @@ export class MessagesService {
         dto.media_file_id ?? null,
         dto.reply_to_id ?? null,
         dto.voice_duration ?? null,
+        JSON.stringify(mentions),
       ],
     );
     const msg = rows[0];
@@ -142,6 +159,16 @@ export class MessagesService {
       title: full.sender_name ?? 'New message',
       body: full.text ?? '📎 Media',
     }).catch(() => {});
+
+    // Targeted push for each mentioned user (bypasses mute, fires even if the
+    // general notification was already sent above — recipients deduplicate on device).
+    if (mentions.length > 0) {
+      const mentionedIds = mentions.map((m) => m.id);
+      this.fcm.notifyMentionedUsers(chatId, senderId, mentionedIds, {
+        title: `${full.sender_name ?? 'Someone'} mentioned you`,
+        body: full.text ?? '📎 Media',
+      }).catch(() => {});
+    }
 
     return full;
   }
@@ -233,10 +260,12 @@ export class MessagesService {
     const { rows } = await this.pool.query(
       `SELECT m.*,
               u.display_name  AS sender_name,
+              u.username      AS sender_username,
               u.avatar_url    AS sender_avatar,
               rm.text         AS reply_to_text,
               rm.type         AS reply_to_type,
-              ru.display_name AS reply_to_sender_name
+              ru.display_name AS reply_to_sender_name,
+              COALESCE(m.mentions, '[]'::jsonb) AS mentions
        FROM messages m
        JOIN users u ON u.id = m.sender_id
        LEFT JOIN messages rm ON rm.id = m.reply_to_id
