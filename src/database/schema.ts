@@ -48,6 +48,189 @@ export const MIGRATIONS: string[] = [
 
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_official BOOLEAN NOT NULL DEFAULT FALSE`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin    BOOLEAN NOT NULL DEFAULT FALSE`,
+
+  // ── Mini App Platform ──────────────────────────────────────────────────────
+
+  `CREATE TABLE IF NOT EXISTS developer_accounts (
+    id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id           UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    display_name      VARCHAR(100) NOT NULL,
+    website_url       VARCHAR(500),
+    description       TEXT,
+    avatar_url        TEXT,
+    is_verified       BOOLEAN     NOT NULL DEFAULT FALSE,
+    is_suspended      BOOLEAN     NOT NULL DEFAULT FALSE,
+    suspension_reason TEXT,
+    total_installs    BIGINT      NOT NULL DEFAULT 0,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id)
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS mini_apps (
+    id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    developer_id        UUID         NOT NULL REFERENCES developer_accounts(id) ON DELETE CASCADE,
+    name                VARCHAR(100) NOT NULL,
+    slug                VARCHAR(100) NOT NULL,
+    short_description   VARCHAR(200) NOT NULL DEFAULT '',
+    description         TEXT         NOT NULL DEFAULT '',
+    icon_url            TEXT,
+    banner_url          TEXT,
+    category            VARCHAR(50)  NOT NULL DEFAULT 'utilities',
+    tags                TEXT[]       NOT NULL DEFAULT '{}',
+    status              VARCHAR(20)  NOT NULL DEFAULT 'draft',
+    is_featured         BOOLEAN      NOT NULL DEFAULT FALSE,
+    featured_order      SMALLINT,
+    current_version_id  UUID,
+    privacy_policy_url  TEXT,
+    terms_url           TEXT,
+    support_url         TEXT,
+    contact_email       VARCHAR(200),
+    allowed_domains     TEXT[]       NOT NULL DEFAULT '{}',
+    total_installs      BIGINT       NOT NULL DEFAULT 0,
+    active_installs     BIGINT       NOT NULL DEFAULT 0,
+    rating_average      NUMERIC(3,2) NOT NULL DEFAULT 0,
+    rating_count        INTEGER      NOT NULL DEFAULT 0,
+    trending_score      NUMERIC(10,4) NOT NULL DEFAULT 0,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    UNIQUE(slug)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_mini_apps_status    ON mini_apps(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_mini_apps_category  ON mini_apps(category) WHERE status = 'published'`,
+  `CREATE INDEX IF NOT EXISTS idx_mini_apps_trending  ON mini_apps(trending_score DESC) WHERE status = 'published'`,
+  `CREATE INDEX IF NOT EXISTS idx_mini_apps_installs  ON mini_apps(total_installs DESC) WHERE status = 'published'`,
+  `CREATE INDEX IF NOT EXISTS idx_mini_apps_featured  ON mini_apps(featured_order ASC) WHERE is_featured = TRUE`,
+
+  `CREATE TABLE IF NOT EXISTS mini_app_versions (
+    id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    mini_app_id          UUID        NOT NULL REFERENCES mini_apps(id) ON DELETE CASCADE,
+    version              VARCHAR(20) NOT NULL,
+    changelog            TEXT,
+    app_url              TEXT        NOT NULL,
+    bundle_hash          CHAR(64),
+    min_goseen_version   VARCHAR(20),
+    screenshots          JSONB       NOT NULL DEFAULT '[]',
+    status               VARCHAR(20) NOT NULL DEFAULT 'draft',
+    rejection_reason     TEXT,
+    security_scan_result JSONB,
+    submitted_at         TIMESTAMPTZ,
+    reviewed_at          TIMESTAMPTZ,
+    published_at         TIMESTAMPTZ,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(mini_app_id, version)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_versions_mini_app ON mini_app_versions(mini_app_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_versions_status   ON mini_app_versions(status)`,
+
+  `CREATE TABLE IF NOT EXISTS mini_app_permissions (
+    id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    mini_app_id  UUID        NOT NULL REFERENCES mini_apps(id) ON DELETE CASCADE,
+    scope        VARCHAR(50) NOT NULL,
+    reason       TEXT        NOT NULL DEFAULT '',
+    is_required  BOOLEAN     NOT NULL DEFAULT FALSE,
+    UNIQUE(mini_app_id, scope)
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS mini_app_installs (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mini_app_id         UUID        NOT NULL REFERENCES mini_apps(id) ON DELETE CASCADE,
+    version_id          UUID        REFERENCES mini_app_versions(id) ON DELETE SET NULL,
+    granted_permissions TEXT[]      NOT NULL DEFAULT '{}',
+    denied_permissions  TEXT[]      NOT NULL DEFAULT '{}',
+    is_pinned           BOOLEAN     NOT NULL DEFAULT FALSE,
+    open_count          INTEGER     NOT NULL DEFAULT 0,
+    last_opened_at      TIMESTAMPTZ,
+    installed_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, mini_app_id)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_installs_user       ON mini_app_installs(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_installs_mini_app   ON mini_app_installs(mini_app_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_installs_last_open  ON mini_app_installs(last_opened_at DESC)`,
+
+  `CREATE TABLE IF NOT EXISTS mini_app_reviews (
+    id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id              UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mini_app_id          UUID        NOT NULL REFERENCES mini_apps(id) ON DELETE CASCADE,
+    version_reviewed     VARCHAR(20),
+    rating               SMALLINT    NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    review_text          TEXT,
+    is_hidden            BOOLEAN     NOT NULL DEFAULT FALSE,
+    developer_reply      TEXT,
+    developer_replied_at TIMESTAMPTZ,
+    helpful_count        INTEGER     NOT NULL DEFAULT 0,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, mini_app_id)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_reviews_mini_app ON mini_app_reviews(mini_app_id, rating DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_reviews_recent   ON mini_app_reviews(mini_app_id, created_at DESC)`,
+
+  `CREATE TABLE IF NOT EXISTS developer_api_keys (
+    id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    developer_id UUID        NOT NULL REFERENCES developer_accounts(id) ON DELETE CASCADE,
+    name         VARCHAR(100) NOT NULL,
+    key_prefix   VARCHAR(16)  NOT NULL,
+    key_hash     VARCHAR(64)  NOT NULL,
+    last_four    CHAR(4)      NOT NULL,
+    scopes       TEXT[]       NOT NULL DEFAULT '{}',
+    is_active    BOOLEAN      NOT NULL DEFAULT TRUE,
+    expires_at   TIMESTAMPTZ,
+    last_used_at TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_dev_api_keys_hash      ON developer_api_keys(key_hash)`,
+  `CREATE INDEX IF NOT EXISTS idx_dev_api_keys_developer ON developer_api_keys(developer_id)`,
+
+  `CREATE TABLE IF NOT EXISTS mini_app_storage (
+    mini_app_id UUID        NOT NULL REFERENCES mini_apps(id) ON DELETE CASCADE,
+    user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    key         VARCHAR(200) NOT NULL,
+    value       TEXT,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (mini_app_id, user_id, key)
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS analytics_events (
+    id             UUID        NOT NULL DEFAULT gen_random_uuid(),
+    mini_app_id    UUID        NOT NULL REFERENCES mini_apps(id) ON DELETE CASCADE,
+    user_id        UUID        REFERENCES users(id) ON DELETE SET NULL,
+    event_type     VARCHAR(50) NOT NULL,
+    event_name     VARCHAR(100),
+    event_data     JSONB       NOT NULL DEFAULT '{}',
+    session_id     UUID,
+    platform       VARCHAR(20),
+    app_version    VARCHAR(20),
+    goseen_version VARCHAR(20),
+    duration_ms    INTEGER,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_analytics_app_time ON analytics_events(mini_app_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_analytics_user     ON analytics_events(user_id, created_at DESC)`,
+
+  `CREATE TABLE IF NOT EXISTS app_review_queue (
+    id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    version_id           UUID        NOT NULL REFERENCES mini_app_versions(id) ON DELETE CASCADE,
+    mini_app_id          UUID        NOT NULL REFERENCES mini_apps(id) ON DELETE CASCADE,
+    status               VARCHAR(20) NOT NULL DEFAULT 'pending',
+    reviewer_id          UUID,
+    security_scan_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    security_scan_result JSONB,
+    review_notes         TEXT,
+    assigned_at          TIMESTAMPTZ,
+    completed_at         TIMESTAMPTZ,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_review_queue_status ON app_review_queue(status, created_at)`,
 ];
 
 export const DROP_SCHEMA = `

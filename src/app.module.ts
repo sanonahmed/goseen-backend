@@ -14,6 +14,9 @@ import { CallModule } from './call/call.module';
 import { PostsModule } from './posts/posts.module';
 import { FeedModule } from './feed/feed.module';
 import { AdminModule } from './admin/admin.module';
+import { MiniAppsModule } from './mini-apps/mini-apps.module';
+import { DeveloperModule } from './developer/developer.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -33,6 +36,9 @@ import { HealthController } from './health/health.controller';
     PostsModule,
     FeedModule,
     AdminModule,
+    MiniAppsModule,
+    DeveloperModule,
+    AnalyticsModule,
   ],
   controllers: [HealthController],
 })
