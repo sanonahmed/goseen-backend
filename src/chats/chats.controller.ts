@@ -191,7 +191,7 @@ export class ChatsController {
   async joinChannel(@Param('id') id: string, @Request() req: any) {
     const { chat, sysMsg } = await this.chats.joinChannel(id, req.user.id);
     await this.gateway.joinUserToRoom(req.user.id, id);
-    this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { channelId: id, delta: 1 });
+    this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { chatId: id, delta: 1 });
     if (sysMsg) {
       this.gateway.emitToChat(id, SE.NEW_MSG, { ...sysMsg, chat_id: id });
     }
@@ -229,7 +229,7 @@ export class ChatsController {
     @Request() req: any,
   ) {
     const sysMsg = await this.chats.removeGroupMember(id, req.user.id, userId);
-    this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { chatId: id, delta: -1 });
+    this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { chatId: id, userId, delta: -1 });
     this.gateway.emitToChat(id, SE.NEW_MSG, { ...sysMsg, chat_id: id });
   }
 
@@ -255,7 +255,7 @@ export class ChatsController {
   @Delete(':id/leave')
   async leaveChannel(@Param('id') id: string, @Request() req: any) {
     const sysMsg = await this.chats.leaveChannel(id, req.user.id);
-    this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { channelId: id, delta: -1 });
+    this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { chatId: id, userId: req.user.id, delta: -1 });
     if (sysMsg) {
       this.gateway.emitToChat(id, SE.NEW_MSG, { ...sysMsg, chat_id: id });
     }
