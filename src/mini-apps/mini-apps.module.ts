@@ -6,10 +6,11 @@ import { BridgeService } from './bridge.service';
 import { StoreController } from './store.controller';
 import { InstallController } from './install.controller';
 import { BridgeController } from './bridge.controller';
+import { HostedController } from './hosted.controller';
 
 @Module({
   providers: [InitDataService, StoreService, InstallService, BridgeService],
-  controllers: [StoreController, InstallController, BridgeController],
+  controllers: [StoreController, InstallController, BridgeController, HostedController],
   exports: [InitDataService, InstallService],
 })
 export class MiniAppsModule {}

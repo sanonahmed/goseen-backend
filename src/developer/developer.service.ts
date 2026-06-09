@@ -1,6 +1,7 @@
 import {
   Injectable, Inject, NotFoundException,
   ConflictException, ForbiddenException, BadRequestException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { Pool } from 'pg';
 import { DB_POOL } from '../database/database.module';
@@ -12,8 +13,19 @@ import { SubmitVersionDto } from './dto/submit-version.dto';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 
 @Injectable()
-export class DeveloperService {
+export class DeveloperService implements OnModuleInit {
   constructor(@Inject(DB_POOL) private readonly pool: Pool) {}
+
+  async onModuleInit() {
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS mini_app_hosted_code (
+        version_id  UUID        PRIMARY KEY,
+        content     TEXT        NOT NULL,
+        mime_type   VARCHAR(100) NOT NULL DEFAULT 'text/html; charset=utf-8',
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+  }
 
   // ── Developer Account ─────────────────────────────────────────────────────
 
@@ -332,6 +344,96 @@ export class DeveloperService {
         denied: parseInt(r.denied, 10),
       })),
     };
+  }
+
+  // ── Auto-register (idempotent) ────────────────────────────────────────────
+
+  async autoRegister(userId: string, displayName?: string) {
+    const { rows: existing } = await this.pool.query(
+      `SELECT id, display_name, website_url, description, avatar_url,
+              is_verified, is_suspended, total_installs, created_at
+       FROM developer_accounts WHERE user_id = $1`,
+      [userId],
+    );
+    if (existing[0]) return { account: existing[0], isNew: false };
+
+    const { rows: userRows } = await this.pool.query(
+      `SELECT username, display_name FROM users WHERE id = $1`,
+      [userId],
+    );
+    const name = displayName ?? userRows[0]?.display_name ?? userRows[0]?.username ?? 'Developer';
+
+    const { rows } = await this.pool.query(
+      `INSERT INTO developer_accounts (user_id, display_name)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET display_name = EXCLUDED.display_name
+       RETURNING id, display_name, website_url, description, avatar_url,
+                 is_verified, is_suspended, total_installs, created_at`,
+      [userId, name],
+    );
+    return { account: rows[0], isNew: true };
+  }
+
+  // ── Hosted code version ───────────────────────────────────────────────────
+
+  async submitVersionCode(
+    userId: string,
+    appId: string,
+    version: string,
+    code: string,
+    changelog?: string,
+  ) {
+    const dev = await this._requireDeveloper(userId);
+    await this._requireAppOwnership(dev.id, appId);
+
+    if (!code?.trim()) throw new BadRequestException('code must not be empty');
+
+    // Create version with a temp URL; update after we have the ID
+    const { rows } = await this.pool.query(
+      `INSERT INTO mini_app_versions
+         (mini_app_id, version, app_url, changelog, status, submitted_at)
+       VALUES ($1, $2, '', $3, 'pending_review', NOW())
+       RETURNING id`,
+      [appId, version, changelog ?? null],
+    );
+    const versionId: string = rows[0].id;
+
+    const apiBase = (process.env.API_BASE_URL ?? 'https://optimistic-purpose-production-00fc.up.railway.app/api/v1').replace(/\/$/, '');
+    const appUrl = `${apiBase}/miniapps/hosted/${versionId}`;
+
+    await Promise.all([
+      this.pool.query(
+        `INSERT INTO mini_app_hosted_code (version_id, content) VALUES ($1, $2)`,
+        [versionId, code],
+      ),
+      this.pool.query(
+        `UPDATE mini_app_versions SET app_url = $1 WHERE id = $2`,
+        [appUrl, versionId],
+      ),
+    ]);
+
+    await this.pool.query(
+      `INSERT INTO app_review_queue (version_id, mini_app_id) VALUES ($1, $2)`,
+      [versionId, appId],
+    );
+    await this.pool.query(
+      `UPDATE mini_apps SET status = 'pending_review', updated_at = NOW() WHERE id = $1`,
+      [appId],
+    );
+
+    console.log(`[Developer] hosted version submitted app=${appId} v=${version}`);
+    return { versionId, appUrl };
+  }
+
+  // ── Hosted code retrieval ─────────────────────────────────────────────────
+
+  async getHostedCode(versionId: string): Promise<{ content: string; mimeType: string } | null> {
+    const { rows } = await this.pool.query(
+      `SELECT content, mime_type FROM mini_app_hosted_code WHERE version_id = $1`,
+      [versionId],
+    );
+    if (!rows[0]) return null;
+    return { content: rows[0].content as string, mimeType: rows[0].mime_type as string };
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────

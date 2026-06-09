@@ -98,4 +98,31 @@ export class DeveloperController {
   revokeApiKey(@Param('id') id: string, @Request() req: any) {
     return this.dev.revokeApiKey(req.user.id, id);
   }
+
+  // ── In-app developer portal ───────────────────────────────────────────────
+
+  @Post('auto-register')
+  @HttpCode(HttpStatus.OK)
+  autoRegister(
+    @Body() body: { displayName?: string },
+    @Request() req: any,
+  ) {
+    return this.dev.autoRegister(req.user.id, body?.displayName);
+  }
+
+  @Post('apps/:id/versions/code')
+  @HttpCode(HttpStatus.CREATED)
+  submitVersionCode(
+    @Param('id') id: string,
+    @Body() body: { version: string; code: string; changelog?: string },
+    @Request() req: any,
+  ) {
+    return this.dev.submitVersionCode(
+      req.user.id,
+      id,
+      body.version,
+      body.code,
+      body.changelog,
+    );
+  }
 }
