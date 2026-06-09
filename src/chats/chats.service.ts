@@ -179,6 +179,30 @@ export class ChatsService {
     }
   }
 
+  async addGroupMember(chatId: string, requesterId: string, newUserId: string) {
+    const { rows: chat } = await this.pool.query(
+      'SELECT id, type FROM chats WHERE id = $1',
+      [chatId],
+    );
+    if (!chat[0]) throw new NotFoundException('Group not found');
+    if (chat[0].type !== 'group') throw new BadRequestException('Not a group');
+
+    const { rows: requester } = await this.pool.query(
+      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      [chatId, requesterId],
+    );
+    if (!requester[0] || requester[0].role !== 'owner') {
+      throw new ForbiddenException('Only group owners can add members');
+    }
+
+    await this.pool.query(
+      `INSERT INTO chat_members (chat_id, user_id, role)
+       VALUES ($1, $2, 'member')
+       ON CONFLICT (chat_id, user_id) DO NOTHING`,
+      [chatId, newUserId],
+    );
+  }
+
   async createChannel(
     userId: string,
     name: string,

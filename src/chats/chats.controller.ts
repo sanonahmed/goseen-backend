@@ -28,6 +28,11 @@ class CreatePersonalChatDto {
   target_user_id!: string;
 }
 
+class AddGroupMemberDto {
+  @IsString()
+  user_id!: string;
+}
+
 class CreateGroupDto {
   @IsString()
   @MinLength(1)
@@ -168,6 +173,17 @@ export class ChatsController {
     const result = await this.chats.joinChannel(id, req.user.id);
     this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { channelId: id, delta: 1 });
     return result;
+  }
+
+  @Post(':id/members')
+  async addGroupMember(
+    @Param('id') id: string,
+    @Body() body: AddGroupMemberDto,
+    @Request() req: any,
+  ) {
+    await this.chats.addGroupMember(id, req.user.id, body.user_id);
+    this.gateway.emitToUser(body.user_id, SE.NEW_CHAT, { chatId: id });
+    this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { chatId: id, delta: 1 });
   }
 
   @Delete(':id/leave')
