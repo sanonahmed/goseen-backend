@@ -3,12 +3,13 @@ import {
   UseGuards, Request, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { JwtOptionalAuthGuard } from '../auth/jwt-optional-auth.guard';
 import { StoreService } from './store.service';
 import { StoreQueryDto } from './dto/store-query.dto';
 import { SubmitReviewDto } from './dto/submit-review.dto';
 
 interface OptionalRequest {
-  user?: { id: string; email: string };
+  user?: { id: string; email: string } | null;
 }
 
 @Controller('miniapps/store')
@@ -16,21 +17,25 @@ export class StoreController {
   constructor(private readonly store: StoreService) {}
 
   @Get()
+  @UseGuards(JwtOptionalAuthGuard)
   getListing(@Query() query: StoreQueryDto, @Request() req: OptionalRequest) {
     return this.store.getListing(query, req.user?.id);
   }
 
   @Get('featured')
+  @UseGuards(JwtOptionalAuthGuard)
   getFeatured(@Request() req: OptionalRequest) {
     return this.store.getFeatured(req.user?.id);
   }
 
   @Get('trending')
+  @UseGuards(JwtOptionalAuthGuard)
   getTrending(@Request() req: OptionalRequest) {
     return this.store.getTrending(req.user?.id);
   }
 
   @Get('new')
+  @UseGuards(JwtOptionalAuthGuard)
   getNew(@Request() req: OptionalRequest) {
     return this.store.getNew(req.user?.id);
   }
@@ -41,6 +46,7 @@ export class StoreController {
   }
 
   @Get(':slug')
+  @UseGuards(JwtOptionalAuthGuard)
   getBySlug(@Param('slug') slug: string, @Request() req: OptionalRequest) {
     return this.store.getBySlug(slug, req.user?.id);
   }
