@@ -505,19 +505,43 @@ export class ChatsService {
     return { chat: chatResult };
   }
 
-  async leaveChannel(channelId: string, userId: string): Promise<void> {
+  async leaveChannel(
+    channelId: string,
+    userId: string,
+  ): Promise<Record<string, unknown> | undefined> {
     const { rows } = await this.pool.query(
-      'SELECT role FROM chat_members WHERE chat_id = $1 AND user_id = $2',
+      `SELECT cm.role, c.type
+       FROM chat_members cm
+       JOIN chats c ON c.id = cm.chat_id
+       WHERE cm.chat_id = $1 AND cm.user_id = $2`,
       [channelId, userId],
     );
     if (!rows[0]) return; // Already not a member
     if (rows[0].role === 'owner') {
       throw new ForbiddenException('Channel owner cannot leave');
     }
+
+    let sysMsg: Record<string, unknown> | undefined;
+    if (rows[0].type === 'group') {
+      const { rows: u } = await this.pool.query(
+        'SELECT display_name FROM users WHERE id = $1',
+        [userId],
+      );
+      const actorName = (u[0]?.display_name as string) ?? 'Someone';
+      // Insert before DELETE so the user row still exists for incrementUnread
+      sysMsg = await this.insertSystemMessage(
+        channelId,
+        userId,
+        `${actorName} left the group`,
+      );
+    }
+
     await this.pool.query(
       'DELETE FROM chat_members WHERE chat_id = $1 AND user_id = $2',
       [channelId, userId],
     );
+
+    return sysMsg;
   }
 
   // ── Edit channel ─────────────────────────────────────────────────────────

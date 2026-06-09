@@ -254,8 +254,11 @@ export class ChatsController {
 
   @Delete(':id/leave')
   async leaveChannel(@Param('id') id: string, @Request() req: any) {
-    await this.chats.leaveChannel(id, req.user.id);
+    const sysMsg = await this.chats.leaveChannel(id, req.user.id);
     this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { channelId: id, delta: -1 });
+    if (sysMsg) {
+      this.gateway.emitToChat(id, SE.NEW_MSG, { ...sysMsg, chat_id: id });
+    }
   }
 
   @Post(':id/invite-link')
