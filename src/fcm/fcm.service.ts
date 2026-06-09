@@ -115,6 +115,57 @@ export class FcmService implements OnModuleInit {
   }
 
   /**
+   * Send a message notification to a pre-fetched list of FCM tokens.
+   * Avoids a DB round-trip when the caller already has the token list.
+   * Fire-and-forget — never throws.
+   */
+  async sendToTokens(
+    tokens: string[],
+    payload: { title: string; body: string },
+    chatId: string,
+  ): Promise<void> {
+    if (!this.ready || tokens.length === 0) return;
+    try {
+      const results = await Promise.allSettled(
+        tokens.map((token) =>
+          admin.messaging().send({
+            token,
+            notification: { title: payload.title, body: payload.body },
+            data: { chat_id: chatId },
+            android: {
+              priority: 'high',
+              notification: { channelId: 'goseen_messages' },
+            },
+            apns: {
+              headers: { 'apns-priority': '10' },
+              payload: { aps: { sound: 'default', contentAvailable: true } },
+            },
+          }),
+        ),
+      );
+
+      const staleTokens: string[] = [];
+      results.forEach((r, i) => {
+        if (
+          r.status === 'rejected' &&
+          (r.reason?.errorInfo?.code === 'messaging/registration-token-not-registered' ||
+           r.reason?.errorInfo?.code === 'messaging/invalid-registration-token')
+        ) {
+          staleTokens.push(tokens[i]);
+        }
+      });
+      if (staleTokens.length) {
+        await this.pool.query(
+          'UPDATE users SET fcm_token = NULL WHERE fcm_token = ANY($1)',
+          [staleTokens],
+        );
+      }
+    } catch (err) {
+      this.logger.error('FCM sendToTokens failed', err);
+    }
+  }
+
+  /**
    * Send a push notification to specific mentioned users (bypasses mute).
    * Fire-and-forget — never throws.
    */

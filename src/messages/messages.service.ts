@@ -9,6 +9,7 @@ import { Pool } from 'pg';
 import { DB_POOL } from '../database/database.module';
 import { ChatsService } from '../chats/chats.service';
 import { FcmService } from '../fcm/fcm.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface MentionDto {
   id: string;
@@ -31,6 +32,7 @@ export class MessagesService implements OnModuleInit {
     @Inject(DB_POOL) private readonly pool: Pool,
     private readonly chats: ChatsService,
     private readonly fcm: FcmService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async onModuleInit() {
@@ -154,14 +156,10 @@ export class MessagesService implements OnModuleInit {
     // Fetch with sender info
     const full = await this.getMessageById(msg.id, senderId);
 
-    // Fire-and-forget FCM push to all other chat members.
-    this.fcm.notifyMessageRecipients(chatId, senderId, {
-      title: full.sender_name ?? 'New message',
-      body: full.text ?? '📎 Media',
-    }).catch(() => {});
+    // Single member fetch → FCM push + in-app notifications in one pass.
+    this._notifyMessageRecipients(chatId, senderId, full).catch(() => {});
 
-    // Targeted push for each mentioned user (bypasses mute, fires even if the
-    // general notification was already sent above — recipients deduplicate on device).
+    // Targeted push for each mentioned user (bypasses mute).
     if (mentions.length > 0) {
       const mentionedIds = mentions.map((m) => m.id);
       this.fcm.notifyMentionedUsers(chatId, senderId, mentionedIds, {
@@ -232,6 +230,7 @@ export class MessagesService implements OnModuleInit {
        FROM messages m
        WHERE m.chat_id = $1
          AND m.sender_id != $2
+         AND m.created_at > NOW() - INTERVAL '30 days'
          AND NOT EXISTS (
            SELECT 1 FROM message_status ms
            WHERE ms.message_id = m.id AND ms.user_id = $2
@@ -248,10 +247,54 @@ export class MessagesService implements OnModuleInit {
        FROM messages m
        WHERE m.chat_id = $1
          AND m.sender_id != $2
+         AND m.created_at > NOW() - INTERVAL '30 days'
        ON CONFLICT (message_id, user_id)
        DO UPDATE SET status = 'seen', seen_at = NOW()`,
       [chatId, userId],
     );
+  }
+
+  // ── Batch reactions (one query for N members, replaces N parallel queries) ──
+
+  async getReactionsForAllMembers(
+    messageId: string,
+    memberIds: string[],
+  ): Promise<Map<string, Array<{ emoji: string; count: number; reacted_by_me: boolean }>>> {
+    if (memberIds.length === 0) return new Map();
+    const { rows } = await this.pool.query(
+      `WITH totals AS (
+         SELECT emoji, COUNT(*)::int AS cnt
+         FROM message_reactions
+         WHERE message_id = $1
+         GROUP BY emoji
+       ),
+       user_reacts AS (
+         SELECT emoji, user_id
+         FROM message_reactions
+         WHERE message_id = $1 AND user_id = ANY($2::uuid[])
+       )
+       SELECT
+         v.viewer_id,
+         t.emoji,
+         t.cnt,
+         (ur.user_id IS NOT NULL) AS reacted_by_me
+       FROM (SELECT unnest($2::uuid[]) AS viewer_id) v
+       CROSS JOIN totals t
+       LEFT JOIN user_reacts ur ON ur.emoji = t.emoji AND ur.user_id = v.viewer_id
+       ORDER BY v.viewer_id`,
+      [messageId, memberIds],
+    );
+
+    const map = new Map<string, Array<{ emoji: string; count: number; reacted_by_me: boolean }>>();
+    for (const row of rows) {
+      if (!map.has(row.viewer_id)) map.set(row.viewer_id, []);
+      map.get(row.viewer_id)!.push({
+        emoji:          row.emoji as string,
+        count:          row.cnt as number,
+        reacted_by_me:  row.reacted_by_me as boolean,
+      });
+    }
+    return map;
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -285,5 +328,43 @@ export class MessagesService implements OnModuleInit {
     if (!rows[0]) throw new NotFoundException('Message not found');
     if (rows[0].sender_id !== userId) throw new ForbiddenException();
     return rows[0];
+  }
+
+  private async _notifyMessageRecipients(
+    chatId: string,
+    senderId: string,
+    msg: any,
+  ): Promise<void> {
+    const { rows } = await this.pool.query<{
+      user_id: string;
+      fcm_token: string | null;
+      is_online: boolean;
+    }>(
+      `SELECT cm.user_id, u.fcm_token, u.is_online
+       FROM chat_members cm
+       JOIN users u ON u.id = cm.user_id
+       WHERE cm.chat_id = $1 AND cm.user_id != $2`,
+      [chatId, senderId],
+    );
+
+    const title  = msg.sender_name ?? 'New message';
+    const body   = msg.text ?? '📎 Media';
+    const tokens = rows.map((r) => r.fcm_token).filter((t): t is string => !!t);
+
+    await Promise.allSettled([
+      this.fcm.sendToTokens(tokens, { title, body }, chatId),
+      ...rows
+        .filter((r) => !r.is_online)
+        .map((r) =>
+          this.notifications.create({
+            recipientId: r.user_id,
+            actorId:     senderId,
+            type:        'new_message',
+            title,
+            body,
+            data:        { chatId, messageId: msg.id },
+          }),
+        ),
+    ]);
   }
 }

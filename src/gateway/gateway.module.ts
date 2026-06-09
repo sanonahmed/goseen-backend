@@ -3,7 +3,6 @@ import { JwtModule } from '@nestjs/jwt';
 import { ChatGateway } from './chat.gateway';
 import { ChatsModule } from '../chats/chats.module';
 import { MessagesModule } from '../messages/messages.module';
-import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { CallSessionStore } from '../call/call-session.store';
 
@@ -12,7 +11,6 @@ import { CallSessionStore } from '../call/call-session.store';
     JwtModule.register({}),
     ChatsModule,
     forwardRef(() => MessagesModule),
-    NotificationsModule,
     forwardRef(() => UsersModule),
   ],
   providers: [ChatGateway, CallSessionStore],

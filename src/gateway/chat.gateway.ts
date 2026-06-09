@@ -16,7 +16,6 @@ import { Pool } from 'pg';
 import { DB_POOL } from '../database/database.module';
 import { MessagesService } from '../messages/messages.service';
 import { ChatsService } from '../chats/chats.service';
-import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
 import { FcmService } from '../fcm/fcm.service';
 import { CallSessionStore } from '../call/call-session.store';
@@ -91,7 +90,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @Inject(DB_POOL) private readonly pool: Pool,
     private readonly messages: MessagesService,
     private readonly chats: ChatsService,
-    private readonly notifications: NotificationsService,
     private readonly users: UsersService,
     private readonly fcm: FcmService,
     private readonly callSessions: CallSessionStore,
@@ -218,9 +216,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       ...msg,
       chat_id: data.chatId,
     });
-
-    // Notify offline members via in-app notification record
-    await this.notifyOfflineMembers(data.chatId, userId, msg);
 
     return { event: 'message_sent', data: { id: msg.id } };
   }
@@ -439,23 +434,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log(`[Reaction] optimistic broadcast done to ${roomSize} sockets`);
 
     // Phase 2 — Persist to DB, then send per-user confirmed reactions.
-    // Per-user emission includes reacted_by_me so each client knows whether
-    // THEY reacted, without relying on local-state fallbacks.
+    // Single batch query replaces N parallel per-member queries.
     (data.remove
       ? this.messages.removeReaction(data.messageId, userId, data.emoji)
       : this.messages.addReaction(data.messageId, userId, data.emoji)
     ).then(async () => {
-      const memberIds = await this.chats.getMemberIds(data.chatId);
-      await Promise.all(
-        memberIds.map(async (memberId) => {
-          const reactions = await this.messages.getReactionsForMessage(data.messageId, memberId);
-          this.emitToUser(memberId, 'reaction_added', {
-            chat_id: data.chatId,
-            message_id: data.messageId,
-            reactions,
-          });
-        }),
-      );
+      const memberIds    = await this.chats.getMemberIds(data.chatId);
+      const reactionsMap = await this.messages.getReactionsForAllMembers(data.messageId, memberIds);
+      for (const memberId of memberIds) {
+        this.emitToUser(memberId, 'reaction_added', {
+          chat_id:    data.chatId,
+          message_id: data.messageId,
+          reactions:  reactionsMap.get(memberId) ?? [],
+        });
+      }
       console.log(`[Reaction] confirmed per-user broadcast done for ${memberIds.length} members`);
     }).catch((err) => {
       console.error(`[Reaction] DB persist/confirm failed: ${err}`);
@@ -528,29 +520,4 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
-  private async notifyOfflineMembers(
-    chatId: string,
-    senderId: string,
-    message: any,
-  ) {
-    const { rows: members } = await this.pool.query(
-      `SELECT cm.user_id
-       FROM chat_members cm
-       WHERE cm.chat_id = $1 AND cm.user_id != $2`,
-      [chatId, senderId],
-    );
-
-    for (const member of members) {
-      if (!this.isUserOnline(member.user_id)) {
-        await this.notifications.create({
-          recipientId: member.user_id,
-          actorId: senderId,
-          type: 'new_message',
-          title: message.sender_name ?? 'New message',
-          body: message.text ?? '📎 Media',
-          data: { chatId, messageId: message.id },
-        });
-      }
-    }
-  }
 }
