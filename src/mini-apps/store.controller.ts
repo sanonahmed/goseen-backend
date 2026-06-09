@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtOptionalAuthGuard } from '../auth/jwt-optional-auth.guard';
+import { StoreRateLimitGuard } from './guards/store-rate-limit.guard';
 import { StoreService } from './store.service';
 import { StoreQueryDto } from './dto/store-query.dto';
 import { SubmitReviewDto } from './dto/submit-review.dto';
@@ -13,6 +14,7 @@ interface OptionalRequest {
 }
 
 @Controller('miniapps/store')
+@UseGuards(StoreRateLimitGuard)
 export class StoreController {
   constructor(private readonly store: StoreService) {}
 

@@ -4,6 +4,7 @@ import {
   Get, Query, Delete, Param,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { BridgeRateLimitGuard } from './guards/bridge-rate-limit.guard';
 import { BridgeService } from './bridge.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { VerifyInitDataDto } from './dto/verify-initdata.dto';
@@ -31,6 +32,7 @@ export class BridgeController {
    * Authorization: Bearer {developer_api_key}
    */
   @Post('bridge/verify')
+  @UseGuards(BridgeRateLimitGuard)
   @HttpCode(HttpStatus.OK)
   async verifyInitData(@Body() dto: VerifyInitDataDto, @Request() req: any) {
     const authHeader: string = req.headers?.authorization ?? '';

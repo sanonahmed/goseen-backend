@@ -231,6 +231,9 @@ export const MIGRATIONS: string[] = [
   )`,
 
   `CREATE INDEX IF NOT EXISTS idx_review_queue_status ON app_review_queue(status, created_at)`,
+
+  // Ensure bundle_hash column exists for DBs created before it was added to the DDL
+  `ALTER TABLE mini_app_versions ADD COLUMN IF NOT EXISTS bundle_hash CHAR(64)`,
 ];
 
 export const DROP_SCHEMA = `

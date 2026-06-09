@@ -7,9 +7,11 @@ import { StoreController } from './store.controller';
 import { InstallController } from './install.controller';
 import { BridgeController } from './bridge.controller';
 import { HostedController } from './hosted.controller';
+import { BridgeRateLimitGuard } from './guards/bridge-rate-limit.guard';
+import { StoreRateLimitGuard } from './guards/store-rate-limit.guard';
 
 @Module({
-  providers: [InitDataService, StoreService, InstallService, BridgeService],
+  providers: [InitDataService, StoreService, InstallService, BridgeService, BridgeRateLimitGuard, StoreRateLimitGuard],
   controllers: [StoreController, InstallController, BridgeController, HostedController],
   exports: [InitDataService, InstallService],
 })

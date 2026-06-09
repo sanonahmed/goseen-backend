@@ -388,13 +388,15 @@ export class DeveloperService implements OnModuleInit {
 
     if (!code?.trim()) throw new BadRequestException('code must not be empty');
 
+    const bundleHash = createHash('sha256').update(code).digest('hex');
+
     // Create version with a temp URL; update after we have the ID
     const { rows } = await this.pool.query(
       `INSERT INTO mini_app_versions
-         (mini_app_id, version, app_url, changelog, status, submitted_at)
-       VALUES ($1, $2, '', $3, 'pending_review', NOW())
+         (mini_app_id, version, app_url, bundle_hash, changelog, status, submitted_at)
+       VALUES ($1, $2, '', $3, $4, 'pending_review', NOW())
        RETURNING id`,
-      [appId, version, changelog ?? null],
+      [appId, version, bundleHash, changelog ?? null],
     );
     const versionId: string = rows[0].id;
 
