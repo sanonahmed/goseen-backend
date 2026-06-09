@@ -19,7 +19,7 @@ export class SystemService implements OnModuleInit {
   private async ensureSystemUser(): Promise<void> {
     await this.pool.query(
       `INSERT INTO users (
-         id, email, username, display_name, bio, is_official, is_online
+         id, email, username, display_name, bio, avatar_url, is_official, is_online
        )
        VALUES (
          $1,
@@ -27,12 +27,14 @@ export class SystemService implements OnModuleInit {
          'goseen',
          'GoSeen',
          'The official GoSeen account. Receive welcome messages, security alerts, and app announcements here.',
+         'asset://goseen',
          TRUE,
          FALSE
        )
        ON CONFLICT (id) DO UPDATE SET
          display_name = EXCLUDED.display_name,
          bio          = EXCLUDED.bio,
+         avatar_url   = 'asset://goseen',
          is_official  = TRUE`,
       [GOSEEN_USER_ID],
     );
