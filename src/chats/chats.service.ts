@@ -83,13 +83,16 @@ export class ChatsService {
       [chatId, userId],
     );
     if (!memberRows[0]) {
-      // Allow non-members to view public channels (for preview before joining)
+      // Allow non-members to view public channels and public groups (for preview).
       const { rows: chatRows } = await this.pool.query(
         'SELECT id, type, is_public FROM chats WHERE id = $1',
         [chatId],
       );
       if (!chatRows[0]) throw new NotFoundException('Chat not found');
-      if (chatRows[0].type !== 'channel' || !chatRows[0].is_public) {
+      const isPublicViewable =
+        chatRows[0].is_public &&
+        (chatRows[0].type === 'channel' || chatRows[0].type === 'group');
+      if (!isPublicViewable) {
         throw new ForbiddenException('Not a member of this chat');
       }
     }
@@ -432,17 +435,19 @@ export class ChatsService {
 
   async searchChannels(query: string): Promise<ChannelRow[]> {
     if (!query || query.trim().length === 0) return [];
+    // Strip leading '@' so users can search "@mygroup" or "mygroup" interchangeably.
+    const q = query.trim().replace(/^@/, '');
     const { rows } = await this.pool.query(
       `SELECT id, type, name, avatar_url,
               username        AS peer_username,
               is_public, description, created_by
        FROM chats
-       WHERE type = 'channel'
+       WHERE type IN ('channel', 'group')
          AND is_public = TRUE
          AND (name ILIKE $1 OR username ILIKE $1)
        ORDER BY name
        LIMIT 20`,
-      [`%${query.trim()}%`],
+      [`%${q}%`],
     );
     return rows;
   }
