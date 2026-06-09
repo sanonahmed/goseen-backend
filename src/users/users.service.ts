@@ -88,6 +88,23 @@ export class UsersService {
     return (rows[0]?.e2ee_public_key as string | null) ?? null;
   }
 
+  /** Returns the user IDs of everyone sharing a personal chat with [userId].
+   *  Used to notify contacts when a user registers a new E2EE public key. */
+  async getPersonalChatPartnerIds(userId: string): Promise<string[]> {
+    const { rows } = await this.pool.query(
+      `SELECT DISTINCT cm.user_id
+       FROM chat_members cm
+       INNER JOIN chats c ON c.id = cm.chat_id
+       WHERE c.type = 'personal'
+         AND cm.user_id != $1
+         AND c.id IN (
+           SELECT chat_id FROM chat_members WHERE user_id = $1
+         )`,
+      [userId],
+    );
+    return rows.map((r: any) => r.user_id as string);
+  }
+
   async setOnlineStatus(userId: string, isOnline: boolean): Promise<void> {
     await this.pool.query(
       'UPDATE users SET is_online = $1, last_seen = NOW() WHERE id = $2',

@@ -15,6 +15,7 @@ import {
 import { IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UsersService } from './users.service';
+import { ChatGateway } from '../gateway/chat.gateway';
 
 class UpdateMeDto {
   @IsOptional() @IsString() display_name?: string;
@@ -33,7 +34,10 @@ class E2eeKeyDto {
 @UseGuards(JwtAuthGuard)
 @Controller('users')
 export class UsersController {
-  constructor(private readonly users: UsersService) {}
+  constructor(
+    private readonly users: UsersService,
+    private readonly gateway: ChatGateway,
+  ) {}
 
   @Get('me')
   getMe(@Request() req: any) {
@@ -53,8 +57,14 @@ export class UsersController {
 
   @Post('me/e2ee-key')
   @HttpCode(204)
-  saveE2eeKey(@Request() req: any, @Body() dto: E2eeKeyDto) {
-    return this.users.saveE2eeKey(req.user.id, dto.public_key);
+  async saveE2eeKey(@Request() req: any, @Body() dto: E2eeKeyDto) {
+    await this.users.saveE2eeKey(req.user.id, dto.public_key);
+    // Notify all personal-chat partners so they invalidate their E2EE secret
+    // cache immediately — prevents "[Encrypted message]" after a device change.
+    const partnerIds = await this.users.getPersonalChatPartnerIds(req.user.id);
+    for (const partnerId of partnerIds) {
+      this.gateway.emitToUser(partnerId, 'e2ee_key_rotated', { userId: req.user.id });
+    }
   }
 
   @Get(':userId/e2ee-key')
