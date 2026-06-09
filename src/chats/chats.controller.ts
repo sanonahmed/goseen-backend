@@ -186,6 +186,16 @@ export class ChatsController {
     this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { chatId: id, delta: 1 });
   }
 
+  @Delete(':id/members/:userId')
+  async removeGroupMember(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Request() req: any,
+  ) {
+    await this.chats.removeGroupMember(id, req.user.id, userId);
+    this.gateway.emitToChat(id, SE.MEMBER_COUNT_UPDATED, { chatId: id, delta: -1 });
+  }
+
   @Delete(':id/leave')
   async leaveChannel(@Param('id') id: string, @Request() req: any) {
     await this.chats.leaveChannel(id, req.user.id);
