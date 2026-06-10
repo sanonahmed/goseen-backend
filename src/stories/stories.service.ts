@@ -43,7 +43,9 @@ export class StoriesService {
                )
            )
          )
-       ORDER BY (s.user_id = $1::uuid) DESC, s.created_at ASC`,
+       ORDER BY (s.user_id = $1::uuid) DESC,
+                MAX(s.created_at) OVER (PARTITION BY s.user_id) DESC,
+                s.created_at ASC`,
       [viewerId],
     );
     return rows;
