@@ -11,6 +11,8 @@ import {
   Request,
   Inject,
   forwardRef,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   IsString,
@@ -110,6 +112,15 @@ export class ChatsController {
   @Get(':id')
   getChatById(@Param('id') id: string, @Request() req: any) {
     return this.chats.getChatById(id, req.user.id);
+  }
+
+  @Post('bot')
+  @HttpCode(HttpStatus.OK)
+  createBotChat(
+    @Request() req: any,
+    @Body() body: { slug: string; name: string; iconUrl?: string },
+  ) {
+    return this.chats.getOrCreateBotChat(req.user.id, body.slug, body.name, body.iconUrl);
   }
 
   @Post('personal')

@@ -51,7 +51,7 @@ export class ChatsService {
            ELSE FALSE
          END AS is_online,
          other.id         AS peer_id,
-         other.username   AS peer_username,
+         CASE WHEN c.type = 'bot' THEN c.mini_app_slug ELSE other.username END AS peer_username,
          other.last_seen  AS last_seen,
          COALESCE(other.is_official, FALSE) AS is_verified,
          pm.id           AS pinned_msg_id,
@@ -799,5 +799,43 @@ export class ChatsService {
       [chatId, messageId],
     );
     await this.incrementUnread(chatId, senderId);
+  }
+
+  // ── Bot chats (mini apps in chat list) ────────────────────────────────────
+
+  async getOrCreateBotChat(
+    userId: string,
+    slug: string,
+    name: string,
+    iconUrl?: string,
+  ) {
+    // Return existing bot chat for this user + slug
+    const { rows: existing } = await this.pool.query(
+      `SELECT c.id, c.name, c.type, c.mini_app_slug, c.avatar_url
+       FROM chats c
+       JOIN chat_members cm ON cm.chat_id = c.id
+       WHERE cm.user_id = $1 AND c.type = 'bot' AND c.mini_app_slug = $2
+       LIMIT 1`,
+      [userId, slug],
+    );
+    if (existing[0]) return existing[0];
+
+    // Create a new bot chat
+    const { rows } = await this.pool.query(
+      `INSERT INTO chats (type, name, avatar_url, mini_app_slug, created_by)
+       VALUES ('bot', $1, $2, $3, $4)
+       RETURNING id, name, type, mini_app_slug, avatar_url`,
+      [name, iconUrl ?? null, slug, userId],
+    );
+    const chatId = rows[0].id;
+
+    await this.pool.query(
+      `INSERT INTO chat_members (chat_id, user_id, role)
+       VALUES ($1, $2, 'member')
+       ON CONFLICT (chat_id, user_id) DO NOTHING`,
+      [chatId, userId],
+    );
+
+    return rows[0];
   }
 }

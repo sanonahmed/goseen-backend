@@ -234,6 +234,9 @@ export const MIGRATIONS: string[] = [
 
   // Ensure bundle_hash column exists for DBs created before it was added to the DDL
   `ALTER TABLE mini_app_versions ADD COLUMN IF NOT EXISTS bundle_hash CHAR(64)`,
+
+  // Bot-chat: store the mini app slug so we can navigate back to the right app
+  `ALTER TABLE chats ADD COLUMN IF NOT EXISTS mini_app_slug VARCHAR(100)`,
 ];
 
 export const DROP_SCHEMA = `
