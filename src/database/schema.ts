@@ -273,6 +273,20 @@ export const MIGRATIONS: string[] = [
 
   // Add overlays_json to existing stories tables that predate this column
   `ALTER TABLE stories ADD COLUMN IF NOT EXISTS overlays_json TEXT`,
+
+  // Story reactions — one emoji per user per story (upsert changes emoji)
+  `CREATE TABLE IF NOT EXISTS story_reactions (
+    story_id   UUID        NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+    user_id    UUID        NOT NULL REFERENCES users(id)   ON DELETE CASCADE,
+    emoji      VARCHAR(10) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (story_id, user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_story_reactions_story ON story_reactions (story_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_story_reactions_user  ON story_reactions (user_id)`,
+
+  // metadata for story_reply message type (and future rich message types)
+  `ALTER TABLE messages ADD COLUMN IF NOT EXISTS metadata JSONB`,
 ];
 
 export const DROP_SCHEMA = `
