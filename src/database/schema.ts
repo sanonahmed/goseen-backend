@@ -270,6 +270,9 @@ export const MIGRATIONS: string[] = [
 
   `CREATE INDEX IF NOT EXISTS idx_stories_user_id    ON stories(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_stories_expires_at ON stories(expires_at)`,
+
+  // Add overlays_json to existing stories tables that predate this column
+  `ALTER TABLE stories ADD COLUMN IF NOT EXISTS overlays_json TEXT`,
 ];
 
 export const DROP_SCHEMA = `
