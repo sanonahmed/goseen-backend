@@ -166,6 +166,8 @@ export class AuthService {
       `SELECT 1 FROM users WHERE username = $1
        UNION ALL
        SELECT 1 FROM chats WHERE username = $1
+       UNION ALL
+       SELECT 1 FROM mini_apps WHERE slug = $1
        LIMIT 1`,
       [username],
     );

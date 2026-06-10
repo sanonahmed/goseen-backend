@@ -57,18 +57,23 @@ export class DeveloperService implements OnModuleInit {
   async createApp(userId: string, dto: CreateAppDto) {
     const dev = await this._requireDeveloper(userId);
 
-    // Check slug uniqueness
+    // Check slug uniqueness across all username namespaces (users, chats, mini_apps)
     const { rows: existing } = await this.pool.query(
-      `SELECT 1 FROM mini_apps WHERE slug = $1`,
+      `SELECT 1 FROM users WHERE username = $1
+       UNION ALL
+       SELECT 1 FROM chats WHERE username = $1
+       UNION ALL
+       SELECT 1 FROM mini_apps WHERE slug = $1
+       LIMIT 1`,
       [dto.slug],
     );
-    if (existing.length) throw new ConflictException(`Slug "${dto.slug}" is already taken`);
+    if (existing.length) throw new ConflictException(`Username "${dto.slug}" is already taken`);
 
     const { rows } = await this.pool.query(
       `INSERT INTO mini_apps
          (developer_id, name, slug, short_description, description, category,
-          tags, privacy_policy_url, terms_url, support_url, contact_email, allowed_domains)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          tags, privacy_policy_url, terms_url, support_url, contact_email, allowed_domains, icon_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING id, slug`,
       [
         dev.id,
@@ -77,6 +82,7 @@ export class DeveloperService implements OnModuleInit {
         dto.privacyPolicyUrl ?? null, dto.termsUrl ?? null,
         dto.supportUrl ?? null, dto.contactEmail ?? null,
         dto.allowedDomains ?? [],
+        dto.iconUrl ?? null,
       ],
     );
     return { id: rows[0].id, slug: rows[0].slug };

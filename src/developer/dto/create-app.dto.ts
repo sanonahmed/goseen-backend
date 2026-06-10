@@ -16,4 +16,5 @@ export class CreateAppDto {
   @IsOptional() @IsUrl() supportUrl?: string;
   @IsOptional() @IsString() contactEmail?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) allowedDomains?: string[];
+  @IsOptional() @IsUrl() iconUrl?: string;
 }
