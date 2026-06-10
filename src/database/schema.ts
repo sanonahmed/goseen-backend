@@ -237,6 +237,38 @@ export const MIGRATIONS: string[] = [
 
   // Bot-chat: store the mini app slug so we can navigate back to the right app
   `ALTER TABLE chats ADD COLUMN IF NOT EXISTS mini_app_slug VARCHAR(100)`,
+
+  // Stories: drop legacy Firebase-era table (id TEXT, payload JSONB) if present,
+  // then recreate with normalized UUID schema.
+  `DO $$ BEGIN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'stories' AND column_name = 'author_uid'
+    ) THEN
+      DROP TABLE IF EXISTS stories CASCADE;
+    END IF;
+  END $$`,
+
+  `CREATE TABLE IF NOT EXISTS stories (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    media_url           TEXT,
+    is_video            BOOLEAN     NOT NULL DEFAULT false,
+    text                TEXT,
+    text_bg_color_value BIGINT      NOT NULL DEFAULT 4283953362,
+    expires_at          TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours'),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS story_views (
+    story_id  UUID        NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+    viewer_id UUID        NOT NULL REFERENCES users(id)   ON DELETE CASCADE,
+    viewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (story_id, viewer_id)
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_stories_user_id    ON stories(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_stories_expires_at ON stories(expires_at)`,
 ];
 
 export const DROP_SCHEMA = `

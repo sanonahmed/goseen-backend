@@ -17,6 +17,7 @@ import { AdminModule } from './admin/admin.module';
 import { MiniAppsModule } from './mini-apps/mini-apps.module';
 import { DeveloperModule } from './developer/developer.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { StoriesModule } from './stories/stories.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -39,6 +40,7 @@ import { HealthController } from './health/health.controller';
     MiniAppsModule,
     DeveloperModule,
     AnalyticsModule,
+    StoriesModule,
   ],
   controllers: [HealthController],
 })
