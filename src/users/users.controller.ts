@@ -19,6 +19,7 @@ import { ChatGateway } from '../gateway/chat.gateway';
 
 class UpdateMeDto {
   @IsOptional() @IsString() display_name?: string;
+  @IsOptional() @IsString() username?: string;
   @IsOptional() @IsString() bio?: string;
   @IsOptional() @IsString() avatar_url?: string;
 }

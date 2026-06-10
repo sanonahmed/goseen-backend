@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { Pool } from 'pg';
 import { DB_POOL } from '../database/database.module';
 
@@ -8,7 +8,8 @@ export class UsersService {
 
   async getMe(userId: string) {
     const { rows } = await this.pool.query(
-      `SELECT id, email, username, display_name, avatar_url, bio, is_online, last_seen, created_at
+      `SELECT id, email, username, display_name, avatar_url, bio, is_online, last_seen, created_at,
+              display_name_changed_at, username_changed_at
        FROM users WHERE id = $1`,
       [userId],
     );
@@ -37,15 +38,54 @@ export class UsersService {
 
   async updateMe(
     userId: string,
-    updates: { display_name?: string; bio?: string; avatar_url?: string },
+    updates: { display_name?: string; username?: string; bio?: string; avatar_url?: string },
   ) {
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    const now = new Date();
+
+    // Enforce 7-day cooldown on identity fields
+    if (updates.display_name !== undefined || updates.username !== undefined) {
+      const { rows: cur } = await this.pool.query(
+        'SELECT display_name_changed_at, username_changed_at FROM users WHERE id = $1',
+        [userId],
+      );
+      const u = cur[0];
+      if (updates.display_name !== undefined && u?.display_name_changed_at) {
+        const changedAt = new Date(u.display_name_changed_at);
+        if (now.getTime() - changedAt.getTime() < SEVEN_DAYS_MS) {
+          const next = new Date(changedAt.getTime() + SEVEN_DAYS_MS);
+          throw new BadRequestException(`display_name_locked_until:${next.toISOString()}`);
+        }
+      }
+      if (updates.username !== undefined && u?.username_changed_at) {
+        const changedAt = new Date(u.username_changed_at);
+        if (now.getTime() - changedAt.getTime() < SEVEN_DAYS_MS) {
+          const next = new Date(changedAt.getTime() + SEVEN_DAYS_MS);
+          throw new BadRequestException(`username_locked_until:${next.toISOString()}`);
+        }
+      }
+    }
+
+    // Check username uniqueness
+    if (updates.username !== undefined) {
+      const { rows: taken } = await this.pool.query(
+        'SELECT id FROM users WHERE username = $1 AND id != $2',
+        [updates.username, userId],
+      );
+      if (taken.length > 0) throw new ConflictException('Username already taken');
+    }
+
     const fields: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
 
     if (updates.display_name !== undefined) {
-      fields.push(`display_name = $${idx++}`);
-      values.push(updates.display_name);
+      fields.push(`display_name = $${idx++}`, `display_name_changed_at = $${idx++}`);
+      values.push(updates.display_name, now);
+    }
+    if (updates.username !== undefined) {
+      fields.push(`username = $${idx++}`, `username_changed_at = $${idx++}`);
+      values.push(updates.username, now);
     }
     if (updates.bio !== undefined) {
       fields.push(`bio = $${idx++}`);
@@ -60,7 +100,9 @@ export class UsersService {
     values.push(userId);
     const { rows } = await this.pool.query(
       `UPDATE users SET ${fields.join(', ')}, updated_at = NOW()
-       WHERE id = $${idx} RETURNING id, email, username, display_name, avatar_url, bio`,
+       WHERE id = $${idx}
+       RETURNING id, email, username, display_name, avatar_url, bio,
+                 display_name_changed_at, username_changed_at`,
       values,
     );
     return rows[0];
