@@ -10,6 +10,7 @@ const STORY_SELECT = `
     s.is_video,
     s.text,
     s.text_bg_color_value,
+    s.overlays_json,
     s.expires_at,
     s.created_at,
     u.username,
@@ -55,18 +56,20 @@ export class StoriesService {
       is_video?: boolean;
       text?: string;
       text_bg_color_value?: number;
+      overlays_json?: string;
     },
   ) {
     const { rows } = await this.pool.query(
-      `INSERT INTO stories (user_id, media_url, is_video, text, text_bg_color_value)
-       VALUES ($1::uuid, $2, $3, $4, $5)
-       RETURNING id, user_id, media_url, is_video, text, text_bg_color_value, expires_at, created_at`,
+      `INSERT INTO stories (user_id, media_url, is_video, text, text_bg_color_value, overlays_json)
+       VALUES ($1::uuid, $2, $3, $4, $5, $6)
+       RETURNING id, user_id, media_url, is_video, text, text_bg_color_value, overlays_json, expires_at, created_at`,
       [
         userId,
         dto.media_url ?? null,
         dto.is_video ?? false,
         dto.text ?? null,
         dto.text_bg_color_value ?? 4283953362,
+        dto.overlays_json ?? null,
       ],
     );
     return rows[0];

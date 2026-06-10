@@ -256,6 +256,7 @@ export const MIGRATIONS: string[] = [
     is_video            BOOLEAN     NOT NULL DEFAULT false,
     text                TEXT,
     text_bg_color_value BIGINT      NOT NULL DEFAULT 4283953362,
+    overlays_json       TEXT,
     expires_at          TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours'),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,

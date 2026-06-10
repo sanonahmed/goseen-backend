@@ -17,6 +17,7 @@ class CreateStoryDto {
   @IsOptional() @IsBoolean() is_video?: boolean;
   @IsOptional() @IsString()  text?: string;
   @IsOptional() @IsNumber()  text_bg_color_value?: number;
+  @IsOptional() @IsString()  overlays_json?: string;
 }
 
 @UseGuards(JwtAuthGuard)
