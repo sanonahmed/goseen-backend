@@ -86,6 +86,7 @@ export class MessagesService implements OnModuleInit {
          m.chat_id,
          m.sender_id,
          u.display_name  AS sender_name,
+         u.username      AS sender_username,
          u.avatar_url    AS sender_avatar,
          m.type,
          m.text,
@@ -97,6 +98,7 @@ export class MessagesService implements OnModuleInit {
          ru.display_name AS reply_to_sender_name,
          m.is_edited,
          m.created_at,
+         m.metadata,
          COALESCE(m.mentions, '[]'::jsonb) AS mentions,
          COALESCE(
            json_agg(
@@ -119,7 +121,7 @@ export class MessagesService implements OnModuleInit {
        WHERE m.chat_id = $1
          AND m.is_deleted = FALSE
          ${timeClause}
-       GROUP BY m.id, u.display_name, u.avatar_url, rm.text, rm.type, ru.display_name
+       GROUP BY m.id, u.display_name, u.username, u.avatar_url, rm.text, rm.type, ru.display_name
        ORDER BY m.created_at DESC
        LIMIT $2`,
       queryParams,

@@ -212,12 +212,30 @@ export class StoriesService {
        RETURNING id, created_at`,
       [chatId, replierId, text, JSON.stringify(metadata)],
     );
+    const msgId = msgRows[0].id;
 
     await this.pool.query(
       `UPDATE chats SET last_message_id = $1, last_message_at = NOW() WHERE id = $2`,
-      [msgRows[0].id, chatId],
+      [msgId, chatId],
     );
 
-    return { chat_id: chatId, message_id: msgRows[0].id };
+    // Fetch full message with sender info for socket broadcast
+    const { rows: fullRows } = await this.pool.query(
+      `SELECT m.*,
+              u.display_name AS sender_name,
+              u.username     AS sender_username,
+              u.avatar_url   AS sender_avatar
+       FROM messages m
+       JOIN users u ON u.id = m.sender_id
+       WHERE m.id = $1`,
+      [msgId],
+    );
+
+    return {
+      chat_id: chatId,
+      message_id: msgId,
+      story_owner_id: story.user_id,
+      full_message: { ...fullRows[0], reactions: [], chat_id: chatId },
+    };
   }
 }

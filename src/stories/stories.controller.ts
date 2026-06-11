@@ -7,6 +7,8 @@ import {
   Body,
   UseGuards,
   Request,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import {
   IsOptional,
@@ -18,6 +20,7 @@ import {
 } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { StoriesService } from './stories.service';
+import { ChatGateway, SE } from '../gateway/chat.gateway';
 
 class CreateStoryDto {
   @IsOptional() @IsString()  media_url?: string;
@@ -38,7 +41,11 @@ class ReplyDto {
 @UseGuards(JwtAuthGuard)
 @Controller('stories')
 export class StoriesController {
-  constructor(private readonly storiesService: StoriesService) {}
+  constructor(
+    private readonly storiesService: StoriesService,
+    @Inject(forwardRef(() => ChatGateway))
+    private readonly gateway: ChatGateway,
+  ) {}
 
   @Get('feed')
   async getFeed(@Request() req: any) {
@@ -114,6 +121,11 @@ export class StoriesController {
       req.user.id,
       dto.text,
     );
-    return result;
+    // Broadcast to the chat room (reaches anyone with that chat open)
+    // and directly to the story owner's personal room (handles new DMs
+    // where the owner hasn't joined the chat room socket yet).
+    this.gateway.emitToChat(result.chat_id, SE.NEW_MSG, result.full_message);
+    this.gateway.emitToUser(result.story_owner_id, SE.NEW_MSG, result.full_message);
+    return { chat_id: result.chat_id, message_id: result.message_id };
   }
 }
