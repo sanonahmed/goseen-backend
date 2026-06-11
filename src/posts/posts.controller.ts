@@ -39,18 +39,18 @@ export class PostsController {
 
   @Post()
   async createPost(@Request() req: any, @Body() dto: CreatePostDto) {
-    const post = await this.postsService.createPost(req.user.userId, dto);
+    const post = await this.postsService.createPost(req.user.id, dto);
     return { post };
   }
 
   @Get(':postId')
   async getPost(@Request() req: any, @Param('postId') postId: string) {
-    return this.postsService.getPost(postId, req.user.userId);
+    return this.postsService.getPost(postId, req.user.id);
   }
 
   @Post(':postId/like')
   async toggleLike(@Request() req: any, @Param('postId') postId: string) {
-    return this.postsService.toggleLike(postId, req.user.userId);
+    return this.postsService.toggleLike(postId, req.user.id);
   }
 
   @Get(':postId/comments')
@@ -73,7 +73,7 @@ export class PostsController {
     @Param('postId') postId: string,
     @Body() dto: AddCommentDto,
   ) {
-    const comment = await this.postsService.addComment(postId, req.user.userId, dto.text);
+    const comment = await this.postsService.addComment(postId, req.user.id, dto.text);
     return { comment };
   }
 }

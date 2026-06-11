@@ -14,7 +14,7 @@ export class FeedController {
     @Query('limit') limit = '20',
   ) {
     const posts = await this.postsService.getFeed(
-      req.user.userId,
+      req.user.id,
       parseInt(page),
       parseInt(limit),
     );
@@ -30,7 +30,7 @@ export class FeedController {
   ) {
     const posts = await this.postsService.getHashtagFeed(
       tag,
-      req.user.userId,
+      req.user.id,
       parseInt(page),
       parseInt(limit),
     );
