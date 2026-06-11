@@ -39,6 +39,10 @@ export class MessagesService implements OnModuleInit {
     await this.pool.query(
       `ALTER TABLE messages ADD COLUMN IF NOT EXISTS mentions JSONB NOT NULL DEFAULT '[]'::jsonb`,
     );
+    // story_reply metadata (JSONB, nullable — no default needed)
+    await this.pool.query(
+      `ALTER TABLE messages ADD COLUMN IF NOT EXISTS metadata JSONB`,
+    );
   }
 
   async getMessages(
