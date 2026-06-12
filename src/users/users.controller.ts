@@ -90,6 +90,12 @@ export class UsersController {
     return this.users.getUserByUsername(username, req.user.id);
   }
 
+  @Post(':userId/profile-view')
+  @HttpCode(204)
+  recordProfileView(@Request() req: any, @Param('userId') userId: string) {
+    return this.users.recordProfileView(req.user.id, userId);
+  }
+
   @Post(':userId/follow')
   follow(@Request() req: any, @Param('userId') userId: string) {
     return this.users.followUser(req.user.id, userId);

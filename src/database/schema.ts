@@ -318,6 +318,9 @@ export const MIGRATIONS: string[] = [
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE INDEX IF NOT EXISTS idx_credit_txs_user ON credit_transactions (user_id, created_at DESC)`,
+
+  // ── Profile views counter ─────────────────────────────────────────────────
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_views INT NOT NULL DEFAULT 0`,
 ];
 
 export const DROP_SCHEMA = `

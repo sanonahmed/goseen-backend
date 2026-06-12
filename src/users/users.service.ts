@@ -8,13 +8,27 @@ export class UsersService {
 
   async getMe(userId: string) {
     const { rows } = await this.pool.query(
-      `SELECT id, email, username, display_name, avatar_url, bio, is_online, last_seen, created_at,
-              display_name_changed_at, username_changed_at
-       FROM users WHERE id = $1`,
+      `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.bio,
+              u.is_online, u.last_seen, u.created_at,
+              u.display_name_changed_at, u.username_changed_at,
+              u.profile_views,
+              COUNT(DISTINCT c.id) FILTER (WHERE c.status = 'accepted') AS connections_count
+       FROM users u
+       LEFT JOIN connections c ON c.follower_id = u.id OR c.following_id = u.id
+       WHERE u.id = $1
+       GROUP BY u.id`,
       [userId],
     );
     if (!rows[0]) throw new NotFoundException('User not found');
     return rows[0];
+  }
+
+  async recordProfileView(viewerId: string, targetId: string): Promise<void> {
+    if (viewerId === targetId) return;
+    await this.pool.query(
+      `UPDATE users SET profile_views = profile_views + 1 WHERE id = $1`,
+      [targetId],
+    );
   }
 
   async getUserByUsername(username: string, requesterId?: string) {
