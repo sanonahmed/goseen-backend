@@ -18,6 +18,7 @@ import { MiniAppsModule } from './mini-apps/mini-apps.module';
 import { DeveloperModule } from './developer/developer.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { StoriesModule } from './stories/stories.module';
+import { CreditsModule } from './credits/credits.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -41,6 +42,7 @@ import { HealthController } from './health/health.controller';
     DeveloperModule,
     AnalyticsModule,
     StoriesModule,
+    CreditsModule,
   ],
   controllers: [HealthController],
 })

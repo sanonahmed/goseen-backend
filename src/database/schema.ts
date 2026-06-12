@@ -287,6 +287,37 @@ export const MIGRATIONS: string[] = [
 
   // metadata for story_reply message type (and future rich message types)
   `ALTER TABLE messages ADD COLUMN IF NOT EXISTS metadata JSONB`,
+
+  // ── Credits & Premium ─────────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS user_credits (
+    user_id            UUID        PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    balance            INT         NOT NULL DEFAULT 0 CHECK (balance >= 0),
+    lifetime_earned    INT         NOT NULL DEFAULT 0,
+    ads_watched_today  INT         NOT NULL DEFAULT 0,
+    ad_date            DATE,
+    streak_days        INT         NOT NULL DEFAULT 0,
+    last_activity      DATE,
+    cooldown_until     TIMESTAMPTZ,
+    premium_expires_at TIMESTAMPTZ,
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  // Add columns that may be absent if the table was created by admin setup.sql
+  `ALTER TABLE user_credits ADD COLUMN IF NOT EXISTS ads_watched_today  INT         NOT NULL DEFAULT 0`,
+  `ALTER TABLE user_credits ADD COLUMN IF NOT EXISTS ad_date            DATE`,
+  `ALTER TABLE user_credits ADD COLUMN IF NOT EXISTS streak_days        INT         NOT NULL DEFAULT 0`,
+  `ALTER TABLE user_credits ADD COLUMN IF NOT EXISTS last_activity      DATE`,
+  `ALTER TABLE user_credits ADD COLUMN IF NOT EXISTS cooldown_until     TIMESTAMPTZ`,
+  `ALTER TABLE user_credits ADD COLUMN IF NOT EXISTS premium_expires_at TIMESTAMPTZ`,
+
+  `CREATE TABLE IF NOT EXISTS credit_transactions (
+    id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    amount      INT         NOT NULL,
+    type        TEXT        NOT NULL DEFAULT 'other',
+    description TEXT        NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_credit_txs_user ON credit_transactions (user_id, created_at DESC)`,
 ];
 
 export const DROP_SCHEMA = `
