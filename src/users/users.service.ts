@@ -26,10 +26,33 @@ export class UsersService {
 
   async recordProfileView(viewerId: string, targetId: string): Promise<void> {
     if (viewerId === targetId) return;
-    await this.pool.query(
-      `UPDATE users SET profile_views = profile_views + 1 WHERE id = $1`,
-      [targetId],
+    // Upsert into log — only increment counter on a brand-new visitor
+    const { rows } = await this.pool.query(
+      `INSERT INTO profile_view_logs (viewer_id, profile_id, viewed_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (viewer_id, profile_id) DO UPDATE SET viewed_at = NOW()
+       RETURNING (xmax = 0) AS is_insert`,
+      [viewerId, targetId],
     );
+    if (rows[0]?.is_insert) {
+      await this.pool.query(
+        `UPDATE users SET profile_views = profile_views + 1 WHERE id = $1`,
+        [targetId],
+      );
+    }
+  }
+
+  async getProfileVisitors(userId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT u.id, u.username, u.display_name, u.avatar_url, pvl.viewed_at
+       FROM profile_view_logs pvl
+       INNER JOIN users u ON u.id = pvl.viewer_id
+       WHERE pvl.profile_id = $1
+       ORDER BY pvl.viewed_at DESC
+       LIMIT 100`,
+      [userId],
+    );
+    return rows;
   }
 
   async getUserByUsername(username: string, requesterId?: string) {

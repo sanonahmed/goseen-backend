@@ -321,6 +321,15 @@ export const MIGRATIONS: string[] = [
 
   // ── Profile views counter ─────────────────────────────────────────────────
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_views INT NOT NULL DEFAULT 0`,
+
+  // ── Profile view log (one row per unique visitor) ─────────────────────────
+  `CREATE TABLE IF NOT EXISTS profile_view_logs (
+    viewer_id  UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    profile_id UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    viewed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (viewer_id, profile_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_pvl_profile ON profile_view_logs (profile_id, viewed_at DESC)`,
 ];
 
 export const DROP_SCHEMA = `

@@ -45,6 +45,11 @@ export class UsersController {
     return this.users.getMe(req.user.id);
   }
 
+  @Get('me/profile-visitors')
+  getProfileVisitors(@Request() req: any) {
+    return this.users.getProfileVisitors(req.user.id);
+  }
+
   @Post('fcm-token')
   @HttpCode(204)
   saveFcmToken(@Request() req: any, @Body() dto: FcmTokenDto) {
