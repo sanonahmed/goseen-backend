@@ -12,6 +12,7 @@ export class UsersService {
               u.is_online, u.last_seen, u.created_at,
               u.display_name_changed_at, u.username_changed_at,
               u.profile_views,
+              (SELECT COUNT(*) FROM posts WHERE payload->>'authorUid' = u.id::text AND is_hidden = false)::int AS posts_count,
               COUNT(DISTINCT c.id) FILTER (WHERE c.status = 'accepted') AS connections_count
        FROM users u
        LEFT JOIN connections c ON c.follower_id = u.id OR c.following_id = u.id
