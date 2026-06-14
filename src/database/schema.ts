@@ -330,6 +330,19 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (viewer_id, profile_id)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_pvl_profile ON profile_view_logs (profile_id, viewed_at DESC)`,
+
+  // ── Device sessions (multi-session support) ───────────────────────────────
+  `CREATE TABLE IF NOT EXISTS device_sessions (
+    id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id            UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    refresh_token_hash TEXT        NOT NULL,
+    platform           VARCHAR(20),
+    device_name        VARCHAR(100),
+    ip_address         VARCHAR(45),
+    last_active_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_device_sessions_user ON device_sessions (user_id, last_active_at DESC)`,
 ];
 
 export const DROP_SCHEMA = `

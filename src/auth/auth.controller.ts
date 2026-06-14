@@ -3,10 +3,12 @@ import {
   Post,
   Patch,
   Get,
+  Delete,
   Body,
   UseGuards,
   Request,
   Query,
+  Param,
 } from '@nestjs/common';
 import { IsEmail, IsString, Length, MinLength } from 'class-validator';
 import { JwtService } from '@nestjs/jwt';
@@ -62,13 +64,13 @@ export class AuthController {
   }
 
   @Post('verify-otp')
-  verifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.auth.verifyOtp(dto.email, dto.otp);
+  verifyOtp(@Body() dto: VerifyOtpDto, @Request() req: any) {
+    return this.auth.verifyOtp(dto.email, dto.otp, this.extractDeviceInfo(req));
   }
 
   @Post('refresh')
-  refresh(@Body() dto: RefreshDto) {
-    return this.auth.refreshTokens(dto.refreshToken);
+  refresh(@Body() dto: RefreshDto, @Request() req: any) {
+    return this.auth.refreshTokens(dto.refreshToken, this.extractDeviceInfo(req));
   }
 
   @UseGuards(JwtAuthGuard)
@@ -94,6 +96,33 @@ export class AuthController {
     return this.auth.checkUsernameAvailable(username).then((available) => ({ available }));
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post('logout')
+  logout(@Request() req: any) {
+    return this.auth.logout(req.user.id, req.user.sid);
+  }
+
+  // ── Device session management ──────────────────────────────────────────────
+
+  @UseGuards(JwtAuthGuard)
+  @Get('sessions')
+  getSessions(@Request() req: any) {
+    return this.auth.getSessions(req.user.id, req.user.sid);
+  }
+
+  // Must be defined before sessions/:id so it is not shadowed by the param route
+  @UseGuards(JwtAuthGuard)
+  @Delete('sessions/others')
+  terminateOtherSessions(@Request() req: any) {
+    return this.auth.terminateOtherSessions(req.user.id, req.user.sid);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('sessions/:id')
+  terminateSession(@Request() req: any, @Param('id') id: string) {
+    return this.auth.terminateSession(req.user.id, id, req.user.sid);
+  }
+
   // Temporary debug endpoint — remove before ship
   @Get('debug-token')
   debugToken(@Request() req: any) {
@@ -112,9 +141,15 @@ export class AuthController {
     }
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Post('logout')
-  logout(@Request() req: any) {
-    return this.auth.logout(req.user.id);
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  private extractDeviceInfo(req: any) {
+    const forwarded = req.headers['x-forwarded-for'] as string | undefined;
+    const ip = forwarded?.split(',')[0]?.trim() ?? req.ip ?? null;
+    return {
+      platform: (req.headers['x-device-platform'] as string | undefined) ?? undefined,
+      deviceName: (req.headers['x-device-name'] as string | undefined) ?? undefined,
+      ip: ip ?? undefined,
+    };
   }
 }

@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 export interface JwtPayload {
   sub: string;
   email: string;
+  sid?: string;
   iat?: number;
   exp?: number;
 }
@@ -23,6 +24,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   validate(payload: JwtPayload) {
     console.log('[JWT] validate called, sub:', payload.sub, 'email:', payload.email);
     if (!payload.sub) throw new UnauthorizedException();
-    return { id: payload.sub, email: payload.email };
+    return { id: payload.sub, email: payload.email, sid: payload.sid };
   }
 }
