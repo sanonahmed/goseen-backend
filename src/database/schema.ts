@@ -332,6 +332,17 @@ export const MIGRATIONS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_pvl_profile ON profile_view_logs (profile_id, viewed_at DESC)`,
 
   // ── Device sessions (multi-session support) ───────────────────────────────
+  // Drop the table if it was created in a previous bad deploy without user_id
+  `DO $$ BEGIN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.tables WHERE table_name = 'device_sessions'
+    ) AND NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'device_sessions' AND column_name = 'user_id'
+    ) THEN
+      DROP TABLE device_sessions;
+    END IF;
+  END $$`,
   `CREATE TABLE IF NOT EXISTS device_sessions (
     id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id            UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
