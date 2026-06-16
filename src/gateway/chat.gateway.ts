@@ -211,11 +211,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       throw new WsException('Failed to send message');
     }
 
-    // Broadcast to chat room (all members including sender)
-    this.server.to(`chat:${data.chatId}`).emit(SE.NEW_MSG, {
-      ...msg,
-      chat_id: data.chatId,
-    });
+    // For personal chats: if the recipient has blocked the sender, deliver
+    // the message only back to the sender so their UI shows it as sent,
+    // but never forward it to the blocker.
+    const { rows: blockRows } = await this.pool.query(
+      `SELECT bu.blocker_id FROM blocked_users bu
+       JOIN chat_members cm ON cm.chat_id = $1 AND cm.user_id = bu.blocker_id
+       JOIN chats c         ON c.id = $1 AND c.type = 'personal'
+       WHERE bu.blocked_id = $2
+       LIMIT 1`,
+      [data.chatId, userId],
+    );
+
+    if (blockRows[0]) {
+      // Recipient has blocked the sender — echo back to sender only.
+      this.emitToUser(userId, SE.NEW_MSG, { ...msg, chat_id: data.chatId });
+    } else {
+      // Normal broadcast to the whole chat room.
+      this.server.to(`chat:${data.chatId}`).emit(SE.NEW_MSG, {
+        ...msg,
+        chat_id: data.chatId,
+      });
+    }
 
     return { event: 'message_sent', data: { id: msg.id } };
   }
