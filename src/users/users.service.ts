@@ -305,4 +305,22 @@ export class UsersService {
       [requesterId, declinerId],
     );
   }
+
+  // ── User blocking ──────────────────────────────────────────────────────────
+
+  async blockUser(blockerId: string, blockedId: string): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO blocked_users (blocker_id, blocked_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [blockerId, blockedId],
+    );
+  }
+
+  async unblockUser(blockerId: string, blockedId: string): Promise<void> {
+    await this.pool.query(
+      `DELETE FROM blocked_users WHERE blocker_id = $1 AND blocked_id = $2`,
+      [blockerId, blockedId],
+    );
+  }
 }

@@ -57,7 +57,11 @@ export class ChatsService {
          pm.id           AS pinned_msg_id,
          pm.text         AS pinned_msg_text,
          pm.type         AS pinned_msg_type,
-         pu.display_name AS pinned_msg_sender
+         pu.display_name AS pinned_msg_sender,
+         EXISTS(
+           SELECT 1 FROM blocked_users bu
+           WHERE bu.blocker_id = other.id AND bu.blocked_id = $1
+         ) AS is_blocked_by_peer
        FROM chat_members cm
        JOIN chats c ON c.id = cm.chat_id
        -- For personal chats, get the other participant

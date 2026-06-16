@@ -110,4 +110,18 @@ export class UsersController {
   unfollow(@Request() req: any, @Param('userId') userId: string) {
     return this.users.unfollowUser(req.user.id, userId);
   }
+
+  @Post(':userId/block')
+  @HttpCode(204)
+  async blockUser(@Request() req: any, @Param('userId') userId: string) {
+    await this.users.blockUser(req.user.id, userId);
+    this.gateway.emitToUser(userId, 'peer_blocked', { by: req.user.id });
+  }
+
+  @Delete(':userId/block')
+  @HttpCode(204)
+  async unblockUser(@Request() req: any, @Param('userId') userId: string) {
+    await this.users.unblockUser(req.user.id, userId);
+    this.gateway.emitToUser(userId, 'peer_unblocked', { by: req.user.id });
+  }
 }
