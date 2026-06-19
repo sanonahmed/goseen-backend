@@ -51,7 +51,12 @@ export class ConnectionsController {
 
   @Post(':userId/decline')
   @HttpCode(204)
-  decline(@Request() req: any, @Param('userId') userId: string) {
-    return this.users.declineConnectionRequest(userId, req.user.id);
+  async decline(@Request() req: any, @Param('userId') userId: string) {
+    await this.users.declineConnectionRequest(userId, req.user.id);
+    // Let the original requester's app know their request was declined so
+    // the Connect button reappears without waiting for a manual refresh.
+    this.gateway.emitToUser(userId, SE.CONNECTION_DECLINED, {
+      user_id: req.user.id,
+    });
   }
 }

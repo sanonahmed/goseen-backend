@@ -35,6 +35,10 @@ export class PostsService {
         EXISTS(
           SELECT 1 FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = $1
         ) AS is_liked,
+        (
+          SELECT status FROM connections
+          WHERE follower_id = $1 AND following_id = u.id
+        ) AS connection_status,
         json_build_object(
           'id',           payload->>'authorUid',
           'display_name', COALESCE(u.display_name, payload->>'authorDisplayName', 'Unknown'),
@@ -59,6 +63,10 @@ export class PostsService {
         EXISTS(
           SELECT 1 FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = $1
         ) AS is_liked,
+        (
+          SELECT status FROM connections
+          WHERE follower_id = $1 AND following_id = u.id
+        ) AS connection_status,
         json_build_object(
           'id',           payload->>'authorUid',
           'display_name', COALESCE(u.display_name, payload->>'authorDisplayName', 'Unknown'),
@@ -83,6 +91,10 @@ export class PostsService {
         EXISTS(
           SELECT 1 FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = $1
         ) AS is_liked,
+        (
+          SELECT status FROM connections
+          WHERE follower_id = $1 AND following_id = u.id
+        ) AS connection_status,
         json_build_object(
           'id',           payload->>'authorUid',
           'display_name', COALESCE(u.display_name, payload->>'authorDisplayName', 'Unknown'),
