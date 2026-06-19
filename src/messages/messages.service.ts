@@ -24,6 +24,7 @@ export interface SendMessageDto {
   reply_to_id?: string;
   voice_duration?: number;
   mentions?: MentionDto[];
+  metadata?: Record<string, unknown>;
 }
 
 @Injectable()
@@ -140,8 +141,8 @@ export class MessagesService implements OnModuleInit {
 
     const { rows } = await this.pool.query(
       `INSERT INTO messages
-         (chat_id, sender_id, type, text, media_url, media_file_id, reply_to_id, voice_duration, mentions)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         (chat_id, sender_id, type, text, media_url, media_file_id, reply_to_id, voice_duration, mentions, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [
         chatId,
@@ -153,6 +154,7 @@ export class MessagesService implements OnModuleInit {
         dto.reply_to_id ?? null,
         dto.voice_duration ?? null,
         JSON.stringify(mentions),
+        dto.metadata ? JSON.stringify(dto.metadata) : null,
       ],
     );
     const msg = rows[0];

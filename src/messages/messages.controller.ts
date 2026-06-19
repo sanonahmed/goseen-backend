@@ -34,6 +34,7 @@ class SendMessageDto {
   @IsOptional() @IsString() reply_to_id?: string;
   @IsOptional() @IsNumber() voice_duration?: number;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => MentionDto) mentions?: MentionDto[];
+  @IsOptional() metadata?: Record<string, unknown>;
 }
 
 class EditMessageDto {
