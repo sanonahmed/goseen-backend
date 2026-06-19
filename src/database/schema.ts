@@ -319,6 +319,15 @@ export const MIGRATIONS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_credit_txs_user ON credit_transactions (user_id, created_at DESC)`,
 
+  // ── AdMob SSV idempotency — one row per Google rewarded-ad transaction_id,
+  // so a replayed/duplicate callback can never grant credits twice ─────────
+  `CREATE TABLE IF NOT EXISTS ad_ssv_transactions (
+    transaction_id TEXT        PRIMARY KEY,
+    user_id        UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    granted        BOOLEAN     NOT NULL DEFAULT FALSE,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+
   // ── Profile views counter ─────────────────────────────────────────────────
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_views INT NOT NULL DEFAULT 0`,
 

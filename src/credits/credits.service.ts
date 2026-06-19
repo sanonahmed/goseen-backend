@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Pool } from 'pg';
 import { DB_POOL } from '../database/database.module';
+import { verifyAdMobSsvSignature } from './admob-ssv.util';
 
 // Economy constants — keep in sync with client CreditEconomy class
 const MAX_ADS_PER_DAY = 15;
@@ -55,7 +56,82 @@ export class CreditsService {
     };
   }
 
-  async adReward(userId: string) {
+  // ── AdMob Server-Side Verification ───────────────────────────────────────
+  //
+  // The client never gets to grant itself credits. Google's ad servers POST
+  // (well, GET) a signed callback to this endpoint once a rewarded ad has
+  // genuinely played to completion; we verify that signature, dedupe by
+  // Google's transaction_id, and only then run the same economy logic that
+  // used to be triggered directly by the client.
+  //
+  // `queryString` is the raw, still-URL-encoded query string from the
+  // incoming request — required as-is for signature verification.
+  async handleSsvCallback(queryString: string): Promise<{ ok: boolean }> {
+    const valid = await verifyAdMobSsvSignature(queryString);
+    if (!valid) return { ok: false };
+
+    const params = new URLSearchParams(queryString);
+    const transactionId = params.get('transaction_id');
+    const userId = params.get('user_id');
+    if (!transactionId || !userId) return { ok: false };
+
+    // Idempotency: a unique-constraint violation here means this exact ad
+    // view was already processed (Google may retry callbacks), so we just
+    // acknowledge without granting a second time.
+    const inserted = await this.pool.query(
+      `INSERT INTO ad_ssv_transactions (transaction_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT (transaction_id) DO NOTHING
+       RETURNING transaction_id`,
+      [transactionId, userId],
+    );
+    if (inserted.rowCount === 0) return { ok: true };
+
+    try {
+      await this.grantAdReward(userId);
+      await this.pool.query(
+        `UPDATE ad_ssv_transactions SET granted = TRUE WHERE transaction_id = $1`,
+        [transactionId],
+      );
+    } catch {
+      // Economy rules (cooldown / daily limit) rejected the grant — the ad
+      // view is still marked processed so a retried callback can't retry it.
+    }
+    return { ok: true };
+  }
+
+  /// Polled by the client after watching an ad. Reports whether a reward
+  /// transaction has landed for this user since `since` yet.
+  async getAdRewardStatus(userId: string, since: Date) {
+    const { rows } = await this.pool.query(
+      `SELECT amount, type FROM credit_transactions
+       WHERE user_id = $1 AND created_at >= $2 AND type IN ('ad', 'streak')
+       ORDER BY created_at ASC`,
+      [userId, since.toISOString()],
+    );
+    if (rows.length === 0) return { pending: true };
+
+    const row = await this.ensureRow(userId);
+    const earned = rows
+      .filter((r) => r.type === 'ad')
+      .reduce((sum, r) => sum + (r.amount as number), 0);
+    const streakBonus = rows
+      .filter((r) => r.type === 'streak')
+      .reduce((sum, r) => sum + (r.amount as number), 0);
+
+    return {
+      pending: false,
+      earned,
+      streak_bonus: streakBonus,
+      balance: row.balance,
+      lifetime_earned: row.lifetime_earned,
+      ads_watched_today: row.ads_watched_today,
+      streak_days: row.streak_days,
+      cooldown_until: row.cooldown_until,
+    };
+  }
+
+  private async grantAdReward(userId: string) {
     const row = await this.ensureRow(userId);
     const now = new Date();
     const todayStr = now.toISOString().slice(0, 10);
