@@ -21,6 +21,23 @@ export class FeedController {
     return { posts };
   }
 
+  @Get('search')
+  async searchFeed(
+    @Request() req: any,
+    @Query('q') q: string,
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+  ) {
+    if (!q?.trim()) return { posts: [] };
+    const posts = await this.postsService.searchPosts(
+      q.trim(),
+      req.user.id,
+      parseInt(page),
+      parseInt(limit),
+    );
+    return { posts };
+  }
+
   @Get('hashtag/:tag')
   async getHashtagFeed(
     @Request() req: any,

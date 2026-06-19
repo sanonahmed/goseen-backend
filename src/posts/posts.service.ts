@@ -200,6 +200,47 @@ export class PostsService {
     return rows;
   }
 
+  async searchPosts(query: string, userId: string, page: number, limit: number) {
+    const offset = (page - 1) * limit;
+    const ilike = `%${query}%`;
+    // Strip leading # so "#coffee" also matches the hashtags array entry "coffee"
+    const tagTerm = query.replace(/^#/, '').toLowerCase();
+    const { rows } = await this.pool.query(
+      `${POST_SELECT},
+        EXISTS(
+          SELECT 1 FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = $1
+        ) AS is_liked,
+        EXISTS(
+          SELECT 1 FROM post_bookmarks pb WHERE pb.post_id = p.id AND pb.user_id = $1
+        ) AS is_bookmarked,
+        (
+          SELECT status FROM connections
+          WHERE follower_id = $1 AND following_id = u.id
+        ) AS connection_status,
+        json_build_object(
+          'id',           payload->>'authorUid',
+          'display_name', COALESCE(u.display_name, payload->>'authorDisplayName', 'Unknown'),
+          'username',     COALESCE(u.username,     payload->>'authorUsername',    'unknown'),
+          'avatar_url',   COALESCE(u.avatar_url,   payload->>'authorPhotoUrl'),
+          'is_verified',  false
+        ) AS author
+      FROM posts p
+      LEFT JOIN users u ON u.id::text = payload->>'authorUid'
+      WHERE p.is_hidden = false
+        AND (
+          payload->>'caption' ILIKE $2
+          OR EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(COALESCE(payload->'hashtags', '[]'::jsonb)) h
+            WHERE LOWER(h) = $3
+          )
+        )
+      ORDER BY p.created_at DESC
+      LIMIT $4 OFFSET $5`,
+      [userId, ilike, tagTerm, limit, offset],
+    );
+    return rows;
+  }
+
   async getComments(postId: string, page: number, limit: number) {
     const offset = (page - 1) * limit;
     const { rows } = await this.pool.query(
