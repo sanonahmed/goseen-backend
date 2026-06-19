@@ -329,7 +329,12 @@ export const MIGRATIONS: string[] = [
   )`,
 
   // ── Profile views counter ─────────────────────────────────────────────────
+  // Legacy lifetime counter — superseded by the computed "new since last
+  // check" badge below, kept around unused rather than dropped.
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_views INT NOT NULL DEFAULT 0`,
+  // When the user last viewed their visitor list (gated by a rewarded ad).
+  // NULL means "never checked" — every visit counts as new until then.
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_views_checked_at TIMESTAMPTZ`,
 
   // ── Profile view log (one row per unique visitor) ─────────────────────────
   `CREATE TABLE IF NOT EXISTS profile_view_logs (

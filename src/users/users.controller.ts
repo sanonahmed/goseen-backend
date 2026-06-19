@@ -50,10 +50,12 @@ export class UsersController {
     return this.users.getProfileVisitors(req.user.id);
   }
 
-  @Post('me/profile-visitors/reset')
+  // Marks visitors as "seen" — moves the new-views cutoff forward without
+  // deleting the visitor list itself.
+  @Post('me/profile-visitors/check')
   @HttpCode(204)
-  resetProfileVisitors(@Request() req: any) {
-    return this.users.resetProfileVisitors(req.user.id);
+  markProfileVisitorsChecked(@Request() req: any) {
+    return this.users.markProfileVisitorsChecked(req.user.id);
   }
 
   @Post('fcm-token')

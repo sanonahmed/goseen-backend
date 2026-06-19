@@ -11,7 +11,10 @@ export class UsersService {
       `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.bio,
               u.is_online, u.last_seen, u.created_at,
               u.display_name_changed_at, u.username_changed_at,
-              u.profile_views,
+              (SELECT COUNT(*) FROM profile_view_logs
+                WHERE profile_id = u.id
+                  AND viewed_at > COALESCE(u.profile_views_checked_at, '-infinity'::timestamptz)
+              )::int AS profile_views,
               (SELECT COUNT(*) FROM posts WHERE payload->>'authorUid' = u.id::text AND is_hidden = false)::int AS posts_count,
               COUNT(DISTINCT c.id) FILTER (WHERE c.status = 'accepted') AS connections_count
        FROM users u
@@ -26,28 +29,26 @@ export class UsersService {
 
   async recordProfileView(viewerId: string, targetId: string): Promise<void> {
     if (viewerId === targetId) return;
-    // Upsert into log — only increment counter on a brand-new visitor
-    const { rows } = await this.pool.query(
+    // Upsert into log — last-visit timestamp per unique viewer. The "new
+    // views" badge is computed from this against profile_views_checked_at,
+    // so no separate counter needs updating here.
+    await this.pool.query(
       `INSERT INTO profile_view_logs (viewer_id, profile_id, viewed_at)
        VALUES ($1, $2, NOW())
-       ON CONFLICT (viewer_id, profile_id) DO UPDATE SET viewed_at = NOW()
-       RETURNING (xmax = 0) AS is_insert`,
+       ON CONFLICT (viewer_id, profile_id) DO UPDATE SET viewed_at = NOW()`,
       [viewerId, targetId],
     );
-    if (rows[0]?.is_insert) {
-      await this.pool.query(
-        `UPDATE users SET profile_views = profile_views + 1 WHERE id = $1`,
-        [targetId],
-      );
-    }
   }
 
   // Called once the user has actually viewed their visitor list (gated by a
-  // rewarded ad client-side) — clears the log and zeroes the badge so only
-  // visits since the last check ever show up.
-  async resetProfileVisitors(userId: string): Promise<void> {
-    await this.pool.query(`DELETE FROM profile_view_logs WHERE profile_id = $1`, [userId]);
-    await this.pool.query(`UPDATE users SET profile_views = 0 WHERE id = $1`, [userId]);
+  // rewarded ad client-side). The list itself is never wiped — this just
+  // moves the "new since last check" cutoff forward so already-seen visits
+  // stop counting toward the badge.
+  async markProfileVisitorsChecked(userId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE users SET profile_views_checked_at = NOW() WHERE id = $1`,
+      [userId],
+    );
   }
 
   async getProfileVisitors(userId: string) {
