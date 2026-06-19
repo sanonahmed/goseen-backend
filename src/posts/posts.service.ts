@@ -21,7 +21,7 @@ const POST_SELECT = `
       COALESCE((payload->>'commentCount')::int, 0)
       + (SELECT COUNT(*) FROM post_comments pc WHERE pc.post_id = p.id)::int
     ) AS comments_count,
-    0 AS shares_count
+    (SELECT COUNT(*) FROM messages m WHERE m.type = 'post_share' AND m.metadata->>'post_id' = p.id::text AND m.is_deleted = FALSE)::int AS shares_count
 `;
 
 @Injectable()
