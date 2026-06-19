@@ -254,7 +254,7 @@ export class PostsService {
     return { authorId: rows[0].author_id, authorName: rows[0].author_name };
   }
 
-  async getComments(postId: string, page: number, limit: number) {
+  async getComments(postId: string, userId: string, page: number, limit: number) {
     const offset = (page - 1) * limit;
     const { rows } = await this.pool.query(
       `SELECT
@@ -262,6 +262,16 @@ export class PostsService {
         pc.post_id,
         pc.text,
         pc.created_at,
+        pc.parent_id,
+        (SELECT COUNT(*) FROM comment_likes cl WHERE cl.comment_id = pc.id)::int AS likes_count,
+        EXISTS(
+          SELECT 1 FROM comment_likes cl WHERE cl.comment_id = pc.id AND cl.user_id = $1
+        ) AS is_liked,
+        CASE WHEN pc.parent_id IS NOT NULL THEN
+          (SELECT u2.username FROM post_comments pc2
+           JOIN users u2 ON u2.id = pc2.author_id
+           WHERE pc2.id = pc.parent_id)
+        END AS reply_to_username,
         json_build_object(
           'id',           u.id,
           'display_name', u.display_name,
@@ -269,16 +279,17 @@ export class PostsService {
           'avatar_url',   u.avatar_url
         ) AS author
       FROM post_comments pc
+      LEFT JOIN post_comments parent ON parent.id = pc.parent_id
       JOIN users u ON u.id = pc.author_id
-      WHERE pc.post_id = $1
-      ORDER BY pc.created_at ASC
-      LIMIT $2 OFFSET $3`,
-      [postId, limit, offset],
+      WHERE pc.post_id = $2
+      ORDER BY COALESCE(parent.created_at, pc.created_at) ASC, pc.created_at ASC
+      LIMIT $3 OFFSET $4`,
+      [userId, postId, limit, offset],
     );
     return rows;
   }
 
-  async addComment(postId: string, userId: string, text: string) {
+  async addComment(postId: string, userId: string, text: string, parentId?: string) {
     const { rows: exists } = await this.pool.query(
       `SELECT 1 FROM posts WHERE id = $1`,
       [postId],
@@ -286,10 +297,10 @@ export class PostsService {
     if (!exists[0]) throw new NotFoundException('Post not found');
 
     const { rows } = await this.pool.query(
-      `INSERT INTO post_comments (post_id, author_id, text)
-       VALUES ($1, $2, $3)
-       RETURNING id, post_id, text, created_at`,
-      [postId, userId, text],
+      `INSERT INTO post_comments (post_id, author_id, text, parent_id)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, post_id, text, created_at, parent_id`,
+      [postId, userId, text, parentId ?? null],
     );
     const { rows: user } = await this.pool.query(
       `SELECT id, display_name, username, avatar_url FROM users WHERE id = $1`,
@@ -297,6 +308,9 @@ export class PostsService {
     );
     return {
       ...rows[0],
+      likes_count: 0,
+      is_liked: false,
+      reply_to_username: null,
       author: {
         id: user[0]?.id,
         display_name: user[0]?.display_name,
@@ -304,6 +318,35 @@ export class PostsService {
         avatar_url: user[0]?.avatar_url,
       },
     };
+  }
+
+  async toggleCommentLike(commentId: string, userId: string) {
+    const { rows: liked } = await this.pool.query(
+      `SELECT 1 FROM comment_likes WHERE comment_id = $1 AND user_id = $2`,
+      [commentId, userId],
+    );
+    if (liked.length > 0) {
+      await this.pool.query(
+        `DELETE FROM comment_likes WHERE comment_id = $1 AND user_id = $2`,
+        [commentId, userId],
+      );
+      return { liked: false };
+    }
+    await this.pool.query(
+      `INSERT INTO comment_likes (comment_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [commentId, userId],
+    );
+    return { liked: true };
+  }
+
+  async getUsersByUsernames(usernames: string[]): Promise<{ id: string; username: string }[]> {
+    if (!usernames.length) return [];
+    const placeholders = usernames.map((_, i) => `$${i + 1}`).join(', ');
+    const { rows } = await this.pool.query(
+      `SELECT id::text, username FROM users WHERE username = ANY(ARRAY[${placeholders}])`,
+      usernames,
+    );
+    return rows;
   }
 
   async createPost(

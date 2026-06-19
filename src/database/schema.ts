@@ -387,6 +387,19 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (post_id, user_id)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_post_bookmarks_user ON post_bookmarks (user_id, created_at DESC)`,
+
+  // ── Comment threading (replies) ───────────────────────────────────────────
+  `ALTER TABLE post_comments ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES post_comments(id) ON DELETE CASCADE`,
+  `CREATE INDEX IF NOT EXISTS idx_post_comment_parent ON post_comments (parent_id) WHERE parent_id IS NOT NULL`,
+
+  // ── Comment likes ─────────────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS comment_likes (
+    comment_id UUID        NOT NULL REFERENCES post_comments(id) ON DELETE CASCADE,
+    user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (comment_id, user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes (comment_id)`,
 ];
 
 export const DROP_SCHEMA = `

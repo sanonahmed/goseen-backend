@@ -35,6 +35,10 @@ class AddCommentDto {
   @IsString()
   @MinLength(1)
   text!: string;
+
+  @IsOptional()
+  @IsString()
+  parent_id?: string;
 }
 
 @UseGuards(JwtAuthGuard)
@@ -98,12 +102,14 @@ export class PostsController {
 
   @Get(':postId/comments')
   async getComments(
+    @Request() req: any,
     @Param('postId') postId: string,
     @Query('page') page = '1',
-    @Query('limit') limit = '30',
+    @Query('limit') limit = '60',
   ) {
     const comments = await this.postsService.getComments(
       postId,
+      req.user.id,
       parseInt(page),
       parseInt(limit),
     );
@@ -116,14 +122,68 @@ export class PostsController {
     @Param('postId') postId: string,
     @Body() dto: AddCommentDto,
   ) {
-    const comment = await this.postsService.addComment(postId, req.user.id, dto.text);
+    const comment = await this.postsService.addComment(
+      postId,
+      req.user.id,
+      dto.text,
+      dto.parent_id,
+    );
 
-    this._notifyPostAuthor(postId, req.user.id, 'comment', {
-      comment_text: dto.text.substring(0, 100),
-      comment_id: comment.id,
-    }).catch(() => null);
+    // Notify post author (only for top-level comments, not replies — reply
+    // author gets their own notification below).
+    if (!dto.parent_id) {
+      this._notifyPostAuthor(postId, req.user.id, 'comment', {
+        comment_text: dto.text.substring(0, 100),
+        comment_id: comment.id,
+      }).catch(() => null);
+    }
+
+    // Notify users @mentioned in the comment text.
+    this._notifyMentions(dto.text, req.user.id, postId, comment.id).catch(() => null);
 
     return { comment };
+  }
+
+  @Post(':postId/comments/:commentId/like')
+  async toggleCommentLike(
+    @Request() req: any,
+    @Param('commentId') commentId: string,
+  ) {
+    return this.postsService.toggleCommentLike(commentId, req.user.id);
+  }
+
+  // ── Mention notification helper ───────────────────────────────────────────
+
+  private async _notifyMentions(
+    text: string,
+    actorId: string,
+    postId: string,
+    commentId: string,
+  ) {
+    const usernames = [...new Set(
+      (text.match(/@(\w+)/g) ?? []).map((m: string) => m.slice(1).toLowerCase()),
+    )];
+    if (!usernames.length) return;
+
+    const mentioned = await this.postsService.getUsersByUsernames(usernames);
+    const actor = await this.users.getUserById(actorId);
+    const actorName = actor?.display_name ?? actor?.username ?? 'Someone';
+
+    await Promise.all(
+      mentioned
+        .filter((u) => u.id !== actorId)
+        .map(async (u) => {
+          const notification = await this.notifications.create({
+            recipientId: u.id,
+            actorId,
+            type: 'mention',
+            title: 'You were mentioned',
+            body: `${actorName} mentioned you in a comment`,
+            data: { post_id: postId, comment_id: commentId },
+          });
+          this.gateway.emitToUser(u.id, SE.NEW_NOTIFICATION, notification);
+        }),
+    );
   }
 
   // ── Shared notification helper ────────────────────────────────────────────
