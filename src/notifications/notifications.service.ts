@@ -7,7 +7,11 @@ export type NotificationType =
   | 'mention'
   | 'follow'
   | 'like'
-  | 'comment';
+  | 'comment'
+  | 'bookmark'
+  | 'share'
+  | 'connect_request'
+  | 'connect_accepted';
 
 @Injectable()
 export class NotificationsService {

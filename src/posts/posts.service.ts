@@ -241,6 +241,19 @@ export class PostsService {
     return rows;
   }
 
+  async getPostInfo(postId: string): Promise<{ authorId: string; authorName: string } | null> {
+    const { rows } = await this.pool.query(
+      `SELECT payload->>'authorUid' AS author_id,
+              COALESCE(u.display_name, payload->>'authorDisplayName', 'Someone') AS author_name
+       FROM posts p
+       LEFT JOIN users u ON u.id::text = payload->>'authorUid'
+       WHERE p.id = $1`,
+      [postId],
+    );
+    if (!rows[0]?.author_id) return null;
+    return { authorId: rows[0].author_id, authorName: rows[0].author_name };
+  }
+
   async getComments(postId: string, page: number, limit: number) {
     const offset = (page - 1) * limit;
     const { rows } = await this.pool.query(
