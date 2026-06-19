@@ -384,4 +384,31 @@ export class PostsService {
     );
     return this.getPost(rows[0].id, userId);
   }
+
+  async deletePost(postId: string, userId: string) {
+    const { rowCount } = await this.pool.query(
+      `UPDATE posts SET is_hidden = TRUE WHERE id = $1 AND payload->>'authorUid' = $2`,
+      [postId, userId],
+    );
+    if (!rowCount) throw new NotFoundException('Post not found or not authorized');
+  }
+
+  async editPost(postId: string, userId: string, text: string) {
+    const { rowCount } = await this.pool.query(
+      `UPDATE posts
+         SET payload = payload || jsonb_build_object('caption', $3::text)
+       WHERE id = $1 AND payload->>'authorUid' = $2`,
+      [postId, userId, text],
+    );
+    if (!rowCount) throw new NotFoundException('Post not found or not authorized');
+  }
+
+  async reportPost(postId: string, userId: string, reason: string) {
+    await this.pool.query(
+      `INSERT INTO post_reports (post_id, reporter_id, reason)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (post_id, reporter_id) DO UPDATE SET reason = EXCLUDED.reason`,
+      [postId, userId, reason],
+    );
+  }
 }

@@ -403,6 +403,16 @@ export const MIGRATIONS: string[] = [
 
   // ── Comment media (photos / GIFs) ─────────────────────────────────────────
   `ALTER TABLE post_comments ADD COLUMN IF NOT EXISTS media_url TEXT`,
+
+  // ── Post reports ──────────────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS post_reports (
+    post_id     TEXT        NOT NULL,
+    reporter_id UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason      TEXT        NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (post_id, reporter_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_post_reports_post ON post_reports (post_id)`,
 ];
 
 export const DROP_SCHEMA = `

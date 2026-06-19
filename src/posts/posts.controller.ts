@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -29,6 +31,14 @@ class CreatePostDto {
   @IsOptional()
   @IsString()
   media_type?: string;
+}
+
+class EditPostDto {
+  @IsOptional() @IsString() text?: string;
+}
+
+class ReportPostDto {
+  @IsString() reason!: string;
 }
 
 class AddCommentDto {
@@ -79,6 +89,29 @@ export class PostsController {
   @Get(':postId')
   async getPost(@Request() req: any, @Param('postId') postId: string) {
     return this.postsService.getPost(postId, req.user.id);
+  }
+
+  @Delete(':postId')
+  async deletePost(@Request() req: any, @Param('postId') postId: string) {
+    await this.postsService.deletePost(postId, req.user.id);
+  }
+
+  @Patch(':postId')
+  async editPost(
+    @Request() req: any,
+    @Param('postId') postId: string,
+    @Body() dto: EditPostDto,
+  ) {
+    await this.postsService.editPost(postId, req.user.id, dto.text ?? '');
+  }
+
+  @Post(':postId/report')
+  async reportPost(
+    @Request() req: any,
+    @Param('postId') postId: string,
+    @Body() dto: ReportPostDto,
+  ) {
+    await this.postsService.reportPost(postId, req.user.id, dto.reason);
   }
 
   @Post(':postId/like')
