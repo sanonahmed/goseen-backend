@@ -400,6 +400,9 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (comment_id, user_id)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_comment_likes_comment ON comment_likes (comment_id)`,
+
+  // ── Comment media (photos / GIFs) ─────────────────────────────────────────
+  `ALTER TABLE post_comments ADD COLUMN IF NOT EXISTS media_url TEXT`,
 ];
 
 export const DROP_SCHEMA = `

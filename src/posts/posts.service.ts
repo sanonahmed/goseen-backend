@@ -263,6 +263,7 @@ export class PostsService {
         pc.text,
         pc.created_at,
         pc.parent_id,
+        pc.media_url,
         (SELECT COUNT(*) FROM comment_likes cl WHERE cl.comment_id = pc.id)::int AS likes_count,
         EXISTS(
           SELECT 1 FROM comment_likes cl WHERE cl.comment_id = pc.id AND cl.user_id = $1
@@ -289,7 +290,7 @@ export class PostsService {
     return rows;
   }
 
-  async addComment(postId: string, userId: string, text: string, parentId?: string) {
+  async addComment(postId: string, userId: string, text: string, parentId?: string, mediaUrl?: string) {
     const { rows: exists } = await this.pool.query(
       `SELECT 1 FROM posts WHERE id = $1`,
       [postId],
@@ -297,10 +298,10 @@ export class PostsService {
     if (!exists[0]) throw new NotFoundException('Post not found');
 
     const { rows } = await this.pool.query(
-      `INSERT INTO post_comments (post_id, author_id, text, parent_id)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, post_id, text, created_at, parent_id`,
-      [postId, userId, text, parentId ?? null],
+      `INSERT INTO post_comments (post_id, author_id, text, parent_id, media_url)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, post_id, text, created_at, parent_id, media_url`,
+      [postId, userId, text, parentId ?? null, mediaUrl ?? null],
     );
     const { rows: user } = await this.pool.query(
       `SELECT id, display_name, username, avatar_url FROM users WHERE id = $1`,

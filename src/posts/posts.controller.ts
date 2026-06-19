@@ -32,13 +32,17 @@ class CreatePostDto {
 }
 
 class AddCommentDto {
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  text!: string;
+  text?: string;
 
   @IsOptional()
   @IsString()
   parent_id?: string;
+
+  @IsOptional()
+  @IsString()
+  media_url?: string;
 }
 
 @UseGuards(JwtAuthGuard)
@@ -122,24 +126,25 @@ export class PostsController {
     @Param('postId') postId: string,
     @Body() dto: AddCommentDto,
   ) {
+    const text = dto.text ?? '';
     const comment = await this.postsService.addComment(
       postId,
       req.user.id,
-      dto.text,
+      text,
       dto.parent_id,
+      dto.media_url,
     );
 
-    // Notify post author (only for top-level comments, not replies — reply
-    // author gets their own notification below).
-    if (!dto.parent_id) {
+    // Notify post author (only for top-level comments, not replies).
+    if (!dto.parent_id && text) {
       this._notifyPostAuthor(postId, req.user.id, 'comment', {
-        comment_text: dto.text.substring(0, 100),
+        comment_text: text.substring(0, 100),
         comment_id: comment.id,
       }).catch(() => null);
     }
 
     // Notify users @mentioned in the comment text.
-    this._notifyMentions(dto.text, req.user.id, postId, comment.id).catch(() => null);
+    if (text) this._notifyMentions(text, req.user.id, postId, comment.id).catch(() => null);
 
     return { comment };
   }
