@@ -23,6 +23,13 @@ export class ConnectionsController {
     @Inject(forwardRef(() => ChatGateway)) private readonly gateway: ChatGateway,
   ) {}
 
+  @Get()
+  getConnections(@Request() req: any) {
+    return this.users.getConnectedUsers(req.user.id).then((rows) => ({
+      connections: rows,
+    }));
+  }
+
   @Get('requests')
   getRequests(@Request() req: any) {
     return this.users.getIncomingRequests(req.user.id).then((rows) => ({
@@ -66,7 +73,15 @@ export class ConnectionsController {
     const accepter = await this.users.getUserById(req.user.id);
     const accepterName = accepter?.display_name ?? accepter?.username ?? 'Someone';
 
-    // Notify the person whose request was accepted
+    // Real-time signal so the requester's app can update its connections list
+    this.gateway.emitToUser(userId, SE.CONNECTION_ACCEPTED, {
+      user_id: req.user.id,
+      username: accepter?.username ?? '',
+      display_name: accepter?.display_name ?? '',
+      avatar_url: accepter?.avatar_url ?? null,
+    });
+
+    // Persist in-app notification
     const notification = await this.notifications.create({
       recipientId: userId,
       actorId: req.user.id,

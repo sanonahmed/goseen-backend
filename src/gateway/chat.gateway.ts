@@ -52,6 +52,7 @@ export const SE = {
   MSG_SEEN:         'message_seen',
   NEW_NOTIFICATION:     'new_notification',
   CONNECTION_REQUEST:   'connection_request',
+  CONNECTION_ACCEPTED:  'connection_accepted',
   CONNECTION_DECLINED:  'connection_declined',
   DELIVERED:        'delivered',
   // Server → Client: call signaling
