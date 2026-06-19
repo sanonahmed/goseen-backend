@@ -42,6 +42,14 @@ export class UsersService {
     }
   }
 
+  // Called once the user has actually viewed their visitor list (gated by a
+  // rewarded ad client-side) — clears the log and zeroes the badge so only
+  // visits since the last check ever show up.
+  async resetProfileVisitors(userId: string): Promise<void> {
+    await this.pool.query(`DELETE FROM profile_view_logs WHERE profile_id = $1`, [userId]);
+    await this.pool.query(`UPDATE users SET profile_views = 0 WHERE id = $1`, [userId]);
+  }
+
   async getProfileVisitors(userId: string) {
     const { rows } = await this.pool.query(
       `SELECT u.id, u.username, u.display_name, u.avatar_url, pvl.viewed_at

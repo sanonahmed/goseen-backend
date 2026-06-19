@@ -50,6 +50,12 @@ export class UsersController {
     return this.users.getProfileVisitors(req.user.id);
   }
 
+  @Post('me/profile-visitors/reset')
+  @HttpCode(204)
+  resetProfileVisitors(@Request() req: any) {
+    return this.users.resetProfileVisitors(req.user.id);
+  }
+
   @Post('fcm-token')
   @HttpCode(204)
   saveFcmToken(@Request() req: any, @Body() dto: FcmTokenDto) {
