@@ -378,6 +378,15 @@ export const MIGRATIONS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_blocked_users_blocker ON blocked_users (blocker_id)`,
   `CREATE INDEX IF NOT EXISTS idx_blocked_users_blocked ON blocked_users (blocked_id)`,
+
+  // ── Post bookmarks (save-for-later, mirrors post_likes) ──────────────────
+  `CREATE TABLE IF NOT EXISTS post_bookmarks (
+    post_id    TEXT        NOT NULL,
+    user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (post_id, user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_post_bookmarks_user ON post_bookmarks (user_id, created_at DESC)`,
 ];
 
 export const DROP_SCHEMA = `

@@ -35,6 +35,9 @@ export class PostsService {
         EXISTS(
           SELECT 1 FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = $1
         ) AS is_liked,
+        EXISTS(
+          SELECT 1 FROM post_bookmarks pb WHERE pb.post_id = p.id AND pb.user_id = $1
+        ) AS is_bookmarked,
         (
           SELECT status FROM connections
           WHERE follower_id = $1 AND following_id = u.id
@@ -63,6 +66,9 @@ export class PostsService {
         EXISTS(
           SELECT 1 FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = $1
         ) AS is_liked,
+        EXISTS(
+          SELECT 1 FROM post_bookmarks pb WHERE pb.post_id = p.id AND pb.user_id = $1
+        ) AS is_bookmarked,
         (
           SELECT status FROM connections
           WHERE follower_id = $1 AND following_id = u.id
@@ -91,6 +97,9 @@ export class PostsService {
         EXISTS(
           SELECT 1 FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = $1
         ) AS is_liked,
+        EXISTS(
+          SELECT 1 FROM post_bookmarks pb WHERE pb.post_id = p.id AND pb.user_id = $1
+        ) AS is_bookmarked,
         (
           SELECT status FROM connections
           WHERE follower_id = $1 AND following_id = u.id
@@ -134,6 +143,61 @@ export class PostsService {
       [postId, userId],
     );
     return { liked: true };
+  }
+
+  async toggleBookmark(postId: string, userId: string) {
+    const { rows: exists } = await this.pool.query(
+      `SELECT 1 FROM posts WHERE id = $1`,
+      [postId],
+    );
+    if (!exists[0]) throw new NotFoundException('Post not found');
+
+    const { rows: bookmarked } = await this.pool.query(
+      `SELECT 1 FROM post_bookmarks WHERE post_id = $1 AND user_id = $2`,
+      [postId, userId],
+    );
+    if (bookmarked.length > 0) {
+      await this.pool.query(
+        `DELETE FROM post_bookmarks WHERE post_id = $1 AND user_id = $2`,
+        [postId, userId],
+      );
+      return { bookmarked: false };
+    }
+    await this.pool.query(
+      `INSERT INTO post_bookmarks (post_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [postId, userId],
+    );
+    return { bookmarked: true };
+  }
+
+  async getBookmarkedPosts(userId: string, page: number, limit: number) {
+    const offset = (page - 1) * limit;
+    const { rows } = await this.pool.query(
+      `${POST_SELECT},
+        EXISTS(
+          SELECT 1 FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = $1
+        ) AS is_liked,
+        TRUE AS is_bookmarked,
+        (
+          SELECT status FROM connections
+          WHERE follower_id = $1 AND following_id = u.id
+        ) AS connection_status,
+        json_build_object(
+          'id',           payload->>'authorUid',
+          'display_name', COALESCE(u.display_name, payload->>'authorDisplayName', 'Unknown'),
+          'username',     COALESCE(u.username,     payload->>'authorUsername',    'unknown'),
+          'avatar_url',   COALESCE(u.avatar_url,   payload->>'authorPhotoUrl'),
+          'is_verified',  false
+        ) AS author
+      FROM posts p
+      INNER JOIN post_bookmarks pb ON pb.post_id = p.id AND pb.user_id = $1
+      LEFT JOIN users u ON u.id::text = payload->>'authorUid'
+      WHERE p.is_hidden = false
+      ORDER BY pb.created_at DESC
+      LIMIT $2 OFFSET $3`,
+      [userId, limit, offset],
+    );
+    return rows;
   }
 
   async getComments(postId: string, page: number, limit: number) {

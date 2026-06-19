@@ -43,6 +43,21 @@ export class PostsController {
     return { post };
   }
 
+  // Declared before ':postId' so it isn't swallowed by that wildcard route.
+  @Get('bookmarks')
+  async getBookmarks(
+    @Request() req: any,
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+  ) {
+    const posts = await this.postsService.getBookmarkedPosts(
+      req.user.id,
+      parseInt(page),
+      parseInt(limit),
+    );
+    return { posts };
+  }
+
   @Get(':postId')
   async getPost(@Request() req: any, @Param('postId') postId: string) {
     return this.postsService.getPost(postId, req.user.id);
@@ -51,6 +66,11 @@ export class PostsController {
   @Post(':postId/like')
   async toggleLike(@Request() req: any, @Param('postId') postId: string) {
     return this.postsService.toggleLike(postId, req.user.id);
+  }
+
+  @Post(':postId/bookmark')
+  async toggleBookmark(@Request() req: any, @Param('postId') postId: string) {
+    return this.postsService.toggleBookmark(postId, req.user.id);
   }
 
   @Get(':postId/comments')
