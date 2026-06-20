@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { Pool } from 'pg';
 import { DB_POOL } from '../database/database.module';
 
@@ -321,11 +321,28 @@ export class PostsService {
   }
 
   async addComment(postId: string, userId: string, text: string, parentId?: string, mediaUrl?: string) {
-    const { rows: exists } = await this.pool.query(
-      `SELECT 1 FROM posts WHERE id = $1`,
+    const { rows: postRows } = await this.pool.query(
+      `SELECT comment_permission, payload->>'authorUid' AS author_uid FROM posts WHERE id = $1 AND is_hidden = false`,
       [postId],
     );
-    if (!exists[0]) throw new NotFoundException('Post not found');
+    if (!postRows[0]) throw new NotFoundException('Post not found');
+
+    const { comment_permission, author_uid } = postRows[0];
+    const isAuthor = author_uid === userId;
+
+    if (!isAuthor) {
+      if (comment_permission === 'none') {
+        throw new ForbiddenException('Comments are disabled on this post');
+      }
+      if (comment_permission === 'connections') {
+        const { rows: conn } = await this.pool.query(
+          `SELECT 1 FROM connections
+           WHERE follower_id = $1 AND following_id::text = $2 AND status = 'accepted'`,
+          [userId, author_uid],
+        );
+        if (!conn[0]) throw new ForbiddenException('Only connections can comment on this post');
+      }
+    }
 
     const { rows } = await this.pool.query(
       `INSERT INTO post_comments (post_id, author_id, text, parent_id, media_url)
