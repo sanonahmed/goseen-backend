@@ -35,6 +35,8 @@ class CreatePostDto {
 
 class EditPostDto {
   @IsOptional() @IsString() text?: string;
+  @IsOptional() @IsString() comment_permission?: string;
+  @IsOptional() @IsString() privacy?: string;
 }
 
 class ReportPostDto {
@@ -102,7 +104,11 @@ export class PostsController {
     @Param('postId') postId: string,
     @Body() dto: EditPostDto,
   ) {
-    await this.postsService.editPost(postId, req.user.id, dto.text ?? '');
+    await this.postsService.editPost(postId, req.user.id, {
+      text: dto.text,
+      comment_permission: dto.comment_permission,
+      privacy: dto.privacy,
+    });
   }
 
   @Post(':postId/report')

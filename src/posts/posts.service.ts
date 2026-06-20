@@ -21,7 +21,9 @@ const POST_SELECT = `
       COALESCE((payload->>'commentCount')::int, 0)
       + (SELECT COUNT(*) FROM post_comments pc WHERE pc.post_id = p.id)::int
     ) AS comments_count,
-    (SELECT COUNT(*) FROM messages m WHERE m.type = 'post_share' AND m.metadata->>'post_id' = p.id::text AND m.is_deleted = FALSE)::int AS shares_count
+    (SELECT COUNT(*) FROM messages m WHERE m.type = 'post_share' AND m.metadata->>'post_id' = p.id::text AND m.is_deleted = FALSE)::int AS shares_count,
+    p.comment_permission,
+    p.privacy
 `;
 
 @Injectable()
@@ -55,6 +57,14 @@ export class PostsService {
         AND NOT EXISTS (
           SELECT 1 FROM blocked_users
           WHERE blocker_id = $1 AND blocked_id::text = payload->>'authorUid'
+        )
+        AND (
+          p.privacy = 'public'
+          OR payload->>'authorUid' = $1::text
+          OR (p.privacy = 'connections' AND EXISTS (
+            SELECT 1 FROM connections c
+            WHERE c.follower_id = $1 AND c.following_id = u.id AND c.status = 'accepted'
+          ))
         )
       ORDER BY p.created_at DESC
       LIMIT $2 OFFSET $3`,
@@ -91,6 +101,14 @@ export class PostsService {
         AND NOT EXISTS (
           SELECT 1 FROM blocked_users
           WHERE blocker_id = $1 AND blocked_id::text = payload->>'authorUid'
+        )
+        AND (
+          p.privacy = 'public'
+          OR payload->>'authorUid' = $1::text
+          OR (p.privacy = 'connections' AND EXISTS (
+            SELECT 1 FROM connections c
+            WHERE c.follower_id = $1 AND c.following_id = u.id AND c.status = 'accepted'
+          ))
         )
       ORDER BY p.created_at DESC
       LIMIT $3 OFFSET $4`,
@@ -405,12 +423,32 @@ export class PostsService {
     if (!rowCount) throw new NotFoundException('Post not found or not authorized');
   }
 
-  async editPost(postId: string, userId: string, text: string) {
+  async editPost(
+    postId: string,
+    userId: string,
+    fields: { text?: string; comment_permission?: string; privacy?: string },
+  ) {
+    const clauses: string[] = [];
+    const params: any[] = [postId, userId];
+    let i = 3;
+
+    if (fields.text !== undefined) {
+      clauses.push(`payload = payload || jsonb_build_object('caption', $${i++}::text)`);
+      params.push(fields.text);
+    }
+    if (fields.comment_permission !== undefined) {
+      clauses.push(`comment_permission = $${i++}`);
+      params.push(fields.comment_permission);
+    }
+    if (fields.privacy !== undefined) {
+      clauses.push(`privacy = $${i++}`);
+      params.push(fields.privacy);
+    }
+    if (!clauses.length) return;
+
     const { rowCount } = await this.pool.query(
-      `UPDATE posts
-         SET payload = payload || jsonb_build_object('caption', $3::text)
-       WHERE id = $1 AND payload->>'authorUid' = $2`,
-      [postId, userId, text],
+      `UPDATE posts SET ${clauses.join(', ')} WHERE id = $1 AND payload->>'authorUid' = $2`,
+      params,
     );
     if (!rowCount) throw new NotFoundException('Post not found or not authorized');
   }

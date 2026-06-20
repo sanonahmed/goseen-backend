@@ -413,6 +413,10 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (post_id, reporter_id)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_post_reports_post ON post_reports (post_id)`,
+
+  // ── Post comment permission & privacy ─────────────────────────────────────
+  `ALTER TABLE posts ADD COLUMN IF NOT EXISTS comment_permission TEXT NOT NULL DEFAULT 'everyone'`,
+  `ALTER TABLE posts ADD COLUMN IF NOT EXISTS privacy            TEXT NOT NULL DEFAULT 'public'`,
 ];
 
 export const DROP_SCHEMA = `
