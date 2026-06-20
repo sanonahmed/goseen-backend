@@ -52,6 +52,10 @@ export class PostsService {
       FROM posts p
       LEFT JOIN users u ON u.id::text = payload->>'authorUid'
       WHERE p.is_hidden = false
+        AND NOT EXISTS (
+          SELECT 1 FROM blocked_users
+          WHERE blocker_id = $1 AND blocked_id::text = payload->>'authorUid'
+        )
       ORDER BY p.created_at DESC
       LIMIT $2 OFFSET $3`,
       [userId, limit, offset],
@@ -84,6 +88,10 @@ export class PostsService {
       LEFT JOIN users u ON u.id::text = payload->>'authorUid'
       WHERE p.is_hidden = false
         AND payload->'hashtags' ? $2
+        AND NOT EXISTS (
+          SELECT 1 FROM blocked_users
+          WHERE blocker_id = $1 AND blocked_id::text = payload->>'authorUid'
+        )
       ORDER BY p.created_at DESC
       LIMIT $3 OFFSET $4`,
       [userId, tag, limit, offset],
@@ -227,6 +235,10 @@ export class PostsService {
       FROM posts p
       LEFT JOIN users u ON u.id::text = payload->>'authorUid'
       WHERE p.is_hidden = false
+        AND NOT EXISTS (
+          SELECT 1 FROM blocked_users
+          WHERE blocker_id = $1 AND blocked_id::text = payload->>'authorUid'
+        )
         AND (
           payload->>'caption' ILIKE $2
           OR EXISTS (
