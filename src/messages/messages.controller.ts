@@ -61,8 +61,9 @@ export class MessagesController {
     @Request() req: any,
     @Query('limit', new DefaultValuePipe(40), ParseIntPipe) limit: number,
     @Query('before_id') beforeId?: string,
+    @Query('since') since?: string,
   ) {
-    return this.messages.getMessages(chatId, req.user.id, limit, beforeId);
+    return this.messages.getMessages(chatId, req.user.id, limit, beforeId, since);
   }
 
   @Post('chats/:chatId/messages')

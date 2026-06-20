@@ -77,6 +77,9 @@ export const SE = {
 @WebSocketGateway({
   cors: { origin: '*', credentials: true },
   namespace: '/',
+  transports: ['websocket'],
+  pingInterval: 10000,
+  pingTimeout: 5000,
 })
 @Injectable()
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {

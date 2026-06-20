@@ -51,6 +51,7 @@ export class MessagesService implements OnModuleInit {
     userId: string,
     limit = 40,
     beforeId?: string,
+    since?: string,
   ) {
     const { rows: memberRows } = await this.pool.query(
       'SELECT id FROM chat_members WHERE chat_id = $1 AND user_id = $2',
@@ -83,6 +84,9 @@ export class MessagesService implements OnModuleInit {
         queryParams.push(rows[0].created_at);
         timeClause = `AND m.created_at < $4`;
       }
+    } else if (since) {
+      queryParams.push(new Date(since));
+      timeClause = `AND m.created_at > $4`;
     }
 
     const { rows } = await this.pool.query(
