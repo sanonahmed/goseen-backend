@@ -2,7 +2,8 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
-  TooManyRequestsException,
+  HttpException,
+  HttpStatus,
   Inject,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -77,8 +78,9 @@ export class AuthService {
         const minsLeft = Math.ceil(
           (new Date(existing.otp_blocked_until).getTime() - now) / 60_000,
         );
-        throw new TooManyRequestsException(
+        throw new HttpException(
           `Too many code requests. Try again in ${minsLeft} minute${minsLeft !== 1 ? 's' : ''}.`,
+          HttpStatus.TOO_MANY_REQUESTS,
         );
       }
 
@@ -89,8 +91,9 @@ export class AuthService {
         const secsAgo = (now - sentAt) / 1_000;
         if (secsAgo < AuthService.OTP_COOLDOWN_SECS) {
           const waitSecs = Math.ceil(AuthService.OTP_COOLDOWN_SECS - secsAgo);
-          throw new TooManyRequestsException(
+          throw new HttpException(
             `Please wait ${waitSecs} second${waitSecs !== 1 ? 's' : ''} before requesting another code.`,
+            HttpStatus.TOO_MANY_REQUESTS,
           );
         }
       }
