@@ -274,7 +274,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { chatId: string; messageId: string },
   ) {
     const { userId } = socket.data;
-    await this.messages.markSeen(data.chatId, userId);
+    await this.messages.markSeen(data.chatId, userId, data.messageId);
     await this.chats.markSeen(data.chatId, userId);
 
     // Notify sender that their message was seen
@@ -534,12 +534,32 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.userSockets.get(userId)?.delete(socketId);
   }
 
-  private broadcastPresence(userId: string, isOnline: boolean, lastSeen?: Date) {
+  private async broadcastPresence(userId: string, isOnline: boolean, lastSeen?: Date) {
     const event = isOnline ? SE.USER_ONLINE : SE.USER_OFFLINE;
-    this.server.emit(event, {
+    const payload = {
       userId,
       ...(lastSeen && { last_seen: lastSeen.toISOString() }),
-    });
+    };
+    // Only notify users who share a personal chat with this user.
+    // Broadcasting to every connected socket (server.emit) is O(N²) — each
+    // connect/disconnect event would fan out to all N sockets, generating
+    // N² frames as users grow. Targeting contacts keeps this O(contacts).
+    try {
+      const { rows } = await this.pool.query<{ user_id: string }>(
+        `SELECT DISTINCT cm2.user_id
+         FROM chat_members cm1
+         JOIN chat_members cm2
+           ON cm2.chat_id = cm1.chat_id AND cm2.user_id != $1
+         JOIN chats c ON c.id = cm1.chat_id AND c.type = 'personal'
+         WHERE cm1.user_id = $1`,
+        [userId],
+      );
+      for (const row of rows) {
+        this.emitToUser(row.user_id, event, payload);
+      }
+    } catch (err) {
+      console.error(`[Socket] broadcastPresence failed userId=${userId}: ${err}`);
+    }
   }
 
 }

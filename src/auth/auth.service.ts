@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  TooManyRequestsException,
   Inject,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -19,6 +20,8 @@ interface DbUser {
   avatar_url: string | null;
   otp_code: string | null;
   otp_expires_at: Date | null;
+  otp_request_count: number;
+  otp_blocked_until: Date | null;
   refresh_token_hash: string | null;
 }
 
@@ -49,18 +52,83 @@ export class AuthService {
     private readonly system: SystemService,
   ) {}
 
+  // How many consecutive un-verified OTP requests trigger the 1-hour block.
+  private static readonly OTP_BLOCK_AFTER    = 5;
+  private static readonly OTP_BLOCK_DURATION = 60 * 60_000; // 1 hour in ms
+  private static readonly OTP_COOLDOWN_SECS  = 60;
+
   async sendOtp(email: string): Promise<void> {
-    const otp = Math.floor(100_000 + Math.random() * 900_000).toString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1_000);
+    const now = Date.now();
+
+    // ── Check rate-limit state for this email ─────────────────────────────────
+    const { rows } = await this.pool.query<{
+      otp_expires_at:    Date | null;
+      otp_request_count: number;
+      otp_blocked_until: Date | null;
+    }>(
+      'SELECT otp_expires_at, otp_request_count, otp_blocked_until FROM users WHERE email = $1',
+      [email],
+    );
+    const existing = rows[0];
+
+    if (existing) {
+      // 1. Hard block: too many consecutive requests without a successful verify.
+      if (existing.otp_blocked_until && now < new Date(existing.otp_blocked_until).getTime()) {
+        const minsLeft = Math.ceil(
+          (new Date(existing.otp_blocked_until).getTime() - now) / 60_000,
+        );
+        throw new TooManyRequestsException(
+          `Too many code requests. Try again in ${minsLeft} minute${minsLeft !== 1 ? 's' : ''}.`,
+        );
+      }
+
+      // 2. Per-request 60-second cooldown between sends.
+      // otp_expires_at = sentAt + 10 min, so sentAt = otp_expires_at - 10 min.
+      if (existing.otp_expires_at) {
+        const sentAt  = new Date(existing.otp_expires_at).getTime() - 10 * 60_000;
+        const secsAgo = (now - sentAt) / 1_000;
+        if (secsAgo < AuthService.OTP_COOLDOWN_SECS) {
+          const waitSecs = Math.ceil(AuthService.OTP_COOLDOWN_SECS - secsAgo);
+          throw new TooManyRequestsException(
+            `Please wait ${waitSecs} second${waitSecs !== 1 ? 's' : ''} before requesting another code.`,
+          );
+        }
+      }
+    }
+
+    // ── Compute new request count ─────────────────────────────────────────────
+    // If a previous block has expired by time (not by verify), restart the count
+    // from zero so the user gets a fresh window after serving their penalty.
+    const blockExpired =
+      !!existing?.otp_blocked_until &&
+      now >= new Date(existing.otp_blocked_until).getTime();
+    const prevCount = blockExpired ? 0 : (existing?.otp_request_count ?? 0);
+    const newCount  = prevCount + 1;
+
+    // On the 5th consecutive request, set the 1-hour block.
+    // The user still receives this last code — subsequent attempts are rejected.
+    const blockedUntil =
+      newCount >= AuthService.OTP_BLOCK_AFTER
+        ? new Date(now + AuthService.OTP_BLOCK_DURATION)
+        : null;
+
+    // ── Generate OTP and persist ──────────────────────────────────────────────
+    const otp       = Math.floor(100_000 + Math.random() * 900_000).toString();
+    const expiresAt = new Date(now + 10 * 60_000);
 
     await this.pool.query(
-      `INSERT INTO users (email, otp_code, otp_expires_at)
-       VALUES ($1, $2, $3)
+      `INSERT INTO users (email, otp_code, otp_expires_at, otp_request_count, otp_blocked_until)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (email)
-       DO UPDATE SET otp_code = $2, otp_expires_at = $3, updated_at = NOW()`,
-      [email, otp, expiresAt],
+       DO UPDATE SET otp_code          = $2,
+                     otp_expires_at    = $3,
+                     otp_request_count = $4,
+                     otp_blocked_until = $5,
+                     updated_at        = NOW()`,
+      [email, otp, expiresAt, newCount, blockedUntil],
     );
 
+    // ── Send email ────────────────────────────────────────────────────────────
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -96,8 +164,15 @@ export class AuthService {
       throw new UnauthorizedException('OTP expired');
     }
 
+    // Clear OTP and reset rate-limit counters on successful verification.
     await this.pool.query(
-      'UPDATE users SET otp_code = NULL, otp_expires_at = NULL, updated_at = NOW() WHERE id = $1',
+      `UPDATE users
+       SET otp_code          = NULL,
+           otp_expires_at    = NULL,
+           otp_request_count = 0,
+           otp_blocked_until = NULL,
+           updated_at        = NOW()
+       WHERE id = $1`,
       [user.id],
     );
 

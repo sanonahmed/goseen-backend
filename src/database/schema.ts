@@ -422,6 +422,12 @@ export const MIGRATIONS: string[] = [
   // 'public' = anyone can see this user's posts on their profile
   // 'connections' = only accepted connections can see their posts
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS post_privacy TEXT NOT NULL DEFAULT 'public'`,
+
+  // ── OTP rate limiting ─────────────────────────────────────────────────────
+  // otp_request_count: consecutive sends without a successful verify (resets to 0 on verify).
+  // otp_blocked_until: set to NOW()+1h when count reaches 5; NULL means not blocked.
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_request_count INT         NOT NULL DEFAULT 0`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_blocked_until TIMESTAMPTZ`,
 ];
 
 export const DROP_SCHEMA = `

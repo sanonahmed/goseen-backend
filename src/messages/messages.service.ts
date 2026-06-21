@@ -252,18 +252,43 @@ export class MessagesService implements OnModuleInit {
     );
   }
 
-  async markSeen(chatId: string, userId: string): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO message_status (message_id, user_id, status, seen_at)
-       SELECT m.id, $2, 'seen', NOW()
-       FROM messages m
-       WHERE m.chat_id = $1
-         AND m.sender_id != $2
-         AND m.created_at > NOW() - INTERVAL '30 days'
-       ON CONFLICT (message_id, user_id)
-       DO UPDATE SET status = 'seen', seen_at = NOW()`,
-      [chatId, userId],
-    );
+  async markSeen(chatId: string, userId: string, upToMessageId?: string): Promise<void> {
+    // When a specific message ID is provided (socket path, fires per-message),
+    // narrow the window to [last_read_at … message.created_at] instead of
+    // scanning the full 30-day history. This turns an expensive bulk scan into
+    // a targeted update that covers only the unread window — typically seconds
+    // or minutes of messages rather than weeks.
+    if (upToMessageId) {
+      await this.pool.query(
+        `INSERT INTO message_status (message_id, user_id, status, seen_at)
+         SELECT m.id, $2, 'seen', NOW()
+         FROM messages m
+         WHERE m.chat_id = $1
+           AND m.sender_id != $2
+           AND m.created_at <= (SELECT created_at FROM messages WHERE id = $3)
+           AND m.created_at > COALESCE(
+             (SELECT last_read_at FROM chat_members WHERE chat_id = $1 AND user_id = $2),
+             NOW() - INTERVAL '24 hours'
+           )
+         ON CONFLICT (message_id, user_id)
+         DO UPDATE SET status = 'seen', seen_at = NOW()`,
+        [chatId, userId, upToMessageId],
+      );
+    } else {
+      // HTTP path (called once on chat open, not per-message) — keep the
+      // original 30-day catch-all so nothing is missed on first load.
+      await this.pool.query(
+        `INSERT INTO message_status (message_id, user_id, status, seen_at)
+         SELECT m.id, $2, 'seen', NOW()
+         FROM messages m
+         WHERE m.chat_id = $1
+           AND m.sender_id != $2
+           AND m.created_at > NOW() - INTERVAL '30 days'
+         ON CONFLICT (message_id, user_id)
+         DO UPDATE SET status = 'seen', seen_at = NOW()`,
+        [chatId, userId],
+      );
+    }
   }
 
   // ── Batch reactions (one query for N members, replaces N parallel queries) ──
