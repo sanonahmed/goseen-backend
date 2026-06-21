@@ -664,11 +664,11 @@ export class ChatsService {
     const { rows } = await this.pool.query(
       `UPDATE chats
        SET invite_token = translate(encode(gen_random_bytes(6), 'base64'), '+/', '-_')
-       WHERE id = $1 AND type = 'channel'
+       WHERE id = $1 AND type IN ('channel', 'group')
        RETURNING invite_token`,
       [channelId],
     );
-    if (!rows[0]) throw new NotFoundException('Channel not found');
+    if (!rows[0]) throw new NotFoundException('Chat not found');
     return rows[0].invite_token as string;
   }
 
@@ -692,7 +692,7 @@ export class ChatsService {
       [token],
     );
     if (!rows[0]) throw new NotFoundException('Invalid or expired invite link');
-    if (rows[0].type !== 'channel') throw new BadRequestException('Not a channel invite');
+    if (rows[0].type !== 'channel' && rows[0].type !== 'group') throw new BadRequestException('Not a group or channel invite');
     const channelId = rows[0].id as string;
 
     await this.pool.query(
