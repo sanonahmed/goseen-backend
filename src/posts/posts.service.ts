@@ -66,9 +66,56 @@ export class PostsService {
             WHERE c.follower_id = $1 AND c.following_id = u.id AND c.status = 'accepted'
           ))
         )
+        AND (
+          u.id IS NULL
+          OR u.post_privacy IS NULL
+          OR u.post_privacy = 'public'
+          OR payload->>'authorUid' = $1::text
+          OR (u.post_privacy = 'connections' AND EXISTS (
+            SELECT 1 FROM connections c
+            WHERE c.follower_id = $1 AND c.following_id = u.id AND c.status = 'accepted'
+          ))
+        )
       ORDER BY p.created_at DESC
       LIMIT $2 OFFSET $3`,
       [userId, limit, offset],
+    );
+    return rows;
+  }
+
+  async getPostsByUser(authorId: string, viewerId: string, page = 1, limit = 20) {
+    const offset = (page - 1) * limit;
+    const { rows } = await this.pool.query(
+      `${POST_SELECT},
+        EXISTS(
+          SELECT 1 FROM post_likes pl WHERE pl.post_id = p.id AND pl.user_id = $2
+        ) AS is_liked,
+        EXISTS(
+          SELECT 1 FROM post_bookmarks pb WHERE pb.post_id = p.id AND pb.user_id = $2
+        ) AS is_bookmarked,
+        json_build_object(
+          'id',           u.id::text,
+          'display_name', u.display_name,
+          'username',     u.username,
+          'avatar_url',   u.avatar_url,
+          'is_verified',  COALESCE(u.is_official, false)
+        ) AS author
+      FROM posts p
+      JOIN users u ON u.id = $1
+      WHERE p.is_hidden = false
+        AND (payload->>'authorUid' = $1::text OR u.id::text = payload->>'authorUid')
+        AND p.privacy != 'private'
+        AND (
+          $2::text = $1::text
+          OR u.post_privacy = 'public'
+          OR (u.post_privacy = 'connections' AND EXISTS (
+            SELECT 1 FROM connections c
+            WHERE c.follower_id = $2 AND c.following_id = $1 AND c.status = 'accepted'
+          ))
+        )
+      ORDER BY p.created_at DESC
+      LIMIT $3 OFFSET $4`,
+      [authorId, viewerId, limit, offset],
     );
     return rows;
   }

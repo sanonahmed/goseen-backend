@@ -155,6 +155,27 @@ export class UsersService {
     return rows[0];
   }
 
+  async getPrivacySettings(userId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT post_privacy FROM users WHERE id = $1`,
+      [userId],
+    );
+    if (!rows[0]) throw new NotFoundException('User not found');
+    return { post_privacy: rows[0].post_privacy ?? 'public' };
+  }
+
+  async updatePrivacySettings(userId: string, settings: { post_privacy?: string }) {
+    const allowed = ['public', 'connections'];
+    if (settings.post_privacy && !allowed.includes(settings.post_privacy)) {
+      throw new Error('Invalid post_privacy value');
+    }
+    await this.pool.query(
+      `UPDATE users SET post_privacy = COALESCE($1, post_privacy) WHERE id = $2`,
+      [settings.post_privacy ?? null, userId],
+    );
+    return this.getPrivacySettings(userId);
+  }
+
   async saveFcmToken(userId: string, token: string): Promise<void> {
     await this.pool.query(
       'UPDATE users SET fcm_token = $1 WHERE id = $2',

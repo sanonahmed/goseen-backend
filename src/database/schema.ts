@@ -417,6 +417,11 @@ export const MIGRATIONS: string[] = [
   // ── Post comment permission & privacy ─────────────────────────────────────
   `ALTER TABLE posts ADD COLUMN IF NOT EXISTS comment_permission TEXT NOT NULL DEFAULT 'everyone'`,
   `ALTER TABLE posts ADD COLUMN IF NOT EXISTS privacy            TEXT NOT NULL DEFAULT 'public'`,
+
+  // ── User-level profile post privacy ───────────────────────────────────────
+  // 'public' = anyone can see this user's posts on their profile
+  // 'connections' = only accepted connections can see their posts
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS post_privacy TEXT NOT NULL DEFAULT 'public'`,
 ];
 
 export const DROP_SCHEMA = `

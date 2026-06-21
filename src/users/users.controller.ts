@@ -24,6 +24,10 @@ class UpdateMeDto {
   @IsOptional() @IsString() avatar_url?: string;
 }
 
+class UpdatePrivacyDto {
+  @IsOptional() @IsString() post_privacy?: string;
+}
+
 class FcmTokenDto {
   @IsString() token!: string;
 }
@@ -43,6 +47,16 @@ export class UsersController {
   @Get('me')
   getMe(@Request() req: any) {
     return this.users.getMe(req.user.id);
+  }
+
+  @Get('me/privacy')
+  getPrivacySettings(@Request() req: any) {
+    return this.users.getPrivacySettings(req.user.id);
+  }
+
+  @Patch('me/privacy')
+  updatePrivacySettings(@Request() req: any, @Body() dto: UpdatePrivacyDto) {
+    return this.users.updatePrivacySettings(req.user.id, dto);
   }
 
   @Get('me/profile-visitors')

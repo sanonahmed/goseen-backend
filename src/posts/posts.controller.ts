@@ -88,6 +88,23 @@ export class PostsController {
     return { posts };
   }
 
+  // Declared before ':postId' so it isn't swallowed by that wildcard route.
+  @Get('by-user/:userId')
+  async getPostsByUser(
+    @Request() req: any,
+    @Param('userId') userId: string,
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+  ) {
+    const posts = await this.postsService.getPostsByUser(
+      userId,
+      req.user.id,
+      parseInt(page),
+      parseInt(limit),
+    );
+    return { posts };
+  }
+
   @Get(':postId')
   async getPost(@Request() req: any, @Param('postId') postId: string) {
     return this.postsService.getPost(postId, req.user.id);
