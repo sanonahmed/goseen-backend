@@ -108,6 +108,7 @@ export class PostsService {
       JOIN users u ON u.id = $1
       LEFT JOIN chats ch ON ch.id = p.channel_id
       WHERE p.is_hidden = false
+        AND p.channel_id IS NULL
         AND (payload->>'authorUid' = $1::text OR u.id::text = payload->>'authorUid')
         AND p.privacy != 'private'
         AND (
