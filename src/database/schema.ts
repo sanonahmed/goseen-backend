@@ -431,7 +431,7 @@ export const MIGRATIONS: string[] = [
 
   // ── Channel-attributed posts ───────────────────────────────────────────────
   // Nullable: only set when the post was published via a channel's compose bar.
-  `ALTER TABLE posts ADD COLUMN IF NOT EXISTS channel_id TEXT REFERENCES chats(id) ON DELETE SET NULL`,
+  `ALTER TABLE posts ADD COLUMN IF NOT EXISTS channel_id UUID REFERENCES chats(id) ON DELETE SET NULL`,
 ];
 
 export const DROP_SCHEMA = `
