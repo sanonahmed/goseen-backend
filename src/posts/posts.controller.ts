@@ -31,6 +31,10 @@ class CreatePostDto {
   @IsOptional()
   @IsString()
   media_type?: string;
+
+  @IsOptional()
+  @IsString()
+  channel_id?: string;
 }
 
 class EditPostDto {

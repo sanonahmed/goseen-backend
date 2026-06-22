@@ -23,7 +23,10 @@ const POST_SELECT = `
     ) AS comments_count,
     (SELECT COUNT(*) FROM messages m WHERE m.type = 'post_share' AND m.metadata->>'post_id' = p.id::text AND m.is_deleted = FALSE)::int AS shares_count,
     p.comment_permission,
-    p.privacy
+    p.privacy,
+    CASE WHEN ch.id IS NOT NULL THEN
+      json_build_object('id', ch.id, 'name', ch.name, 'avatar_url', ch.avatar_url)
+    END AS channel
 `;
 
 @Injectable()
@@ -53,6 +56,7 @@ export class PostsService {
         ) AS author
       FROM posts p
       LEFT JOIN users u ON u.id::text = payload->>'authorUid'
+      LEFT JOIN chats ch ON ch.id = p.channel_id
       WHERE p.is_hidden = false
         AND NOT EXISTS (
           SELECT 1 FROM blocked_users
@@ -102,6 +106,7 @@ export class PostsService {
         ) AS author
       FROM posts p
       JOIN users u ON u.id = $1
+      LEFT JOIN chats ch ON ch.id = p.channel_id
       WHERE p.is_hidden = false
         AND (payload->>'authorUid' = $1::text OR u.id::text = payload->>'authorUid')
         AND p.privacy != 'private'
@@ -143,6 +148,7 @@ export class PostsService {
         ) AS author
       FROM posts p
       LEFT JOIN users u ON u.id::text = payload->>'authorUid'
+      LEFT JOIN chats ch ON ch.id = p.channel_id
       WHERE p.is_hidden = false
         AND payload->'hashtags' ? $2
         AND NOT EXISTS (
@@ -186,6 +192,7 @@ export class PostsService {
         ) AS author
       FROM posts p
       LEFT JOIN users u ON u.id::text = payload->>'authorUid'
+      LEFT JOIN chats ch ON ch.id = p.channel_id
       WHERE p.id = $2 AND p.is_hidden = false`,
       [userId, postId],
     );
@@ -265,6 +272,7 @@ export class PostsService {
       FROM posts p
       INNER JOIN post_bookmarks pb ON pb.post_id = p.id AND pb.user_id = $1
       LEFT JOIN users u ON u.id::text = payload->>'authorUid'
+      LEFT JOIN chats ch ON ch.id = p.channel_id
       WHERE p.is_hidden = false
       ORDER BY pb.created_at DESC
       LIMIT $2 OFFSET $3`,
@@ -299,6 +307,7 @@ export class PostsService {
         ) AS author
       FROM posts p
       LEFT JOIN users u ON u.id::text = payload->>'authorUid'
+      LEFT JOIN chats ch ON ch.id = p.channel_id
       WHERE p.is_hidden = false
         AND NOT EXISTS (
           SELECT 1 FROM blocked_users
@@ -446,7 +455,7 @@ export class PostsService {
 
   async createPost(
     userId: string,
-    data: { text?: string; media_urls?: string[]; media_type?: string },
+    data: { text?: string; media_urls?: string[]; media_type?: string; channel_id?: string },
   ) {
     const { rows: user } = await this.pool.query(
       `SELECT id, username, display_name, avatar_url FROM users WHERE id = $1`,
@@ -471,10 +480,10 @@ export class PostsService {
 
     const now = Date.now();
     const { rows } = await this.pool.query(
-      `INSERT INTO posts (id, created_at, payload, is_hidden)
-       VALUES (gen_random_uuid()::text, $1, $2, false)
+      `INSERT INTO posts (id, created_at, payload, is_hidden, channel_id)
+       VALUES (gen_random_uuid()::text, $1, $2, false, $3)
        RETURNING id`,
-      [now, JSON.stringify(payload)],
+      [now, JSON.stringify(payload), data.channel_id ?? null],
     );
     return this.getPost(rows[0].id, userId);
   }

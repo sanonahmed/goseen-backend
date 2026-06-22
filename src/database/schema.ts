@@ -428,6 +428,10 @@ export const MIGRATIONS: string[] = [
   // otp_blocked_until: set to NOW()+1h when count reaches 5; NULL means not blocked.
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_request_count INT         NOT NULL DEFAULT 0`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS otp_blocked_until TIMESTAMPTZ`,
+
+  // ── Channel-attributed posts ───────────────────────────────────────────────
+  // Nullable: only set when the post was published via a channel's compose bar.
+  `ALTER TABLE posts ADD COLUMN IF NOT EXISTS channel_id TEXT REFERENCES chats(id) ON DELETE SET NULL`,
 ];
 
 export const DROP_SCHEMA = `
