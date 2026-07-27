@@ -102,6 +102,15 @@ export class AuthController {
     return this.auth.logout(req.user.id, req.user.sid);
   }
 
+  // Starts the 7-day deletion grace period; the client logs the user out
+  // right after this succeeds. Logging back in before the period elapses
+  // cancels it (see AuthService.verifyOtp).
+  @UseGuards(JwtAuthGuard)
+  @Delete('account')
+  deleteAccount(@Request() req: any) {
+    return this.auth.requestAccountDeletion(req.user.id);
+  }
+
   // ── Device session management ──────────────────────────────────────────────
 
   @UseGuards(JwtAuthGuard)

@@ -5,6 +5,9 @@ import {
   HttpException,
   HttpStatus,
   Inject,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -24,6 +27,7 @@ interface DbUser {
   otp_request_count: number;
   otp_blocked_until: Date | null;
   refresh_token_hash: string | null;
+  deletion_requested_at: Date | null;
 }
 
 interface DeviceSessionRow {
@@ -45,7 +49,10 @@ interface DeviceInfo {
 }
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(AuthService.name);
+  private deletionSweepTimer?: NodeJS.Timeout;
+
   constructor(
     @Inject(DB_POOL) private readonly pool: Pool,
     private readonly jwt: JwtService,
@@ -57,6 +64,27 @@ export class AuthService {
   private static readonly OTP_BLOCK_AFTER    = 5;
   private static readonly OTP_BLOCK_DURATION = 60 * 60_000; // 1 hour in ms
   private static readonly OTP_COOLDOWN_SECS  = 60;
+
+  // Grace period between an account-deletion request and it actually being purged.
+  private static readonly DELETION_GRACE_DAYS = 7;
+  private static readonly DELETION_SWEEP_INTERVAL_MS = 60 * 60_000; // hourly
+
+  onModuleInit() {
+    // Run once at boot (catches accounts whose grace period elapsed while the
+    // server was offline — no separate cron dyno on Railway), then hourly.
+    this.processScheduledDeletions().catch((err) =>
+      this.logger.error('processScheduledDeletions failed', err),
+    );
+    this.deletionSweepTimer = setInterval(() => {
+      this.processScheduledDeletions().catch((err) =>
+        this.logger.error('processScheduledDeletions failed', err),
+      );
+    }, AuthService.DELETION_SWEEP_INTERVAL_MS);
+  }
+
+  onModuleDestroy() {
+    if (this.deletionSweepTimer) clearInterval(this.deletionSweepTimer);
+  }
 
   async sendOtp(email: string): Promise<void> {
     const now = Date.now();
@@ -179,6 +207,15 @@ export class AuthService {
       [user.id],
     );
 
+    // Logging back in during the grace period cancels a pending deletion.
+    const deletionCancelled = user.deletion_requested_at !== null;
+    if (deletionCancelled) {
+      await this.pool.query(
+        `UPDATE users SET deletion_requested_at = NULL WHERE id = $1`,
+        [user.id],
+      );
+    }
+
     if (user.display_name) {
       const time = new Date().toLocaleString('en-US', {
         timeZone: 'UTC',
@@ -188,7 +225,8 @@ export class AuthService {
       this.system.sendLoginAlert(user.id, time).catch(() => {});
     }
 
-    return this.issueTokens(user, deviceInfo);
+    const tokens = await this.issueTokens(user, deviceInfo);
+    return { ...tokens, account_deletion_cancelled: deletionCancelled };
   }
 
   async refreshTokens(refreshToken: string, deviceInfo?: DeviceInfo) {
@@ -337,6 +375,100 @@ export class AuthService {
         'DELETE FROM device_sessions WHERE user_id = $1',
         [userId],
       );
+    }
+  }
+
+  // Starts the 7-day deletion grace period: marks the account pending and
+  // immediately revokes every active session (this device included — the
+  // client is expected to log the user out right after this call). The
+  // account itself is untouched otherwise, so a normal OTP login still works
+  // and, per verifyOtp() above, cancels the pending deletion.
+  async requestAccountDeletion(userId: string): Promise<{ deletionScheduledAt: string }> {
+    await this.pool.query(
+      `UPDATE users SET deletion_requested_at = NOW(), updated_at = NOW() WHERE id = $1`,
+      [userId],
+    );
+    await this.pool.query('DELETE FROM device_sessions WHERE user_id = $1', [userId]);
+    await this.pool.query('UPDATE users SET refresh_token_hash = NULL WHERE id = $1', [userId]);
+
+    const deletionScheduledAt = new Date(
+      Date.now() + AuthService.DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000,
+    );
+    return { deletionScheduledAt: deletionScheduledAt.toISOString() };
+  }
+
+  // Finds every account whose grace period has elapsed with no cancelling
+  // login, and permanently anonymizes them. Run on a timer from onModuleInit.
+  async processScheduledDeletions(): Promise<void> {
+    const { rows } = await this.pool.query<{ id: string }>(
+      `SELECT id FROM users
+       WHERE deletion_requested_at IS NOT NULL
+         AND deletion_requested_at <= NOW() - INTERVAL '${AuthService.DELETION_GRACE_DAYS} days'`,
+    );
+    for (const row of rows) {
+      try {
+        await this.finalizeAccountDeletion(row.id);
+      } catch (err) {
+        this.logger.error(`Failed to finalize deletion for user ${row.id}`, err);
+      }
+    }
+  }
+
+  // Permanently removes the user's identity and social footprint. The `users`
+  // row itself is kept (not dropped) because messages, stories, and posts
+  // belong to a shared history other people still see — hard-deleting it would
+  // cascade-delete every message this user ever sent, wiping other people's
+  // chat history too. Instead we scrub PII, revoke all sessions, and strip
+  // the account's presence from the social graph.
+  private async finalizeAccountDeletion(userId: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      await client.query(
+        `UPDATE users SET
+           email                  = $2,
+           username               = NULL,
+           display_name           = 'Deleted User',
+           avatar_url             = NULL,
+           bio                    = NULL,
+           fcm_token              = NULL,
+           e2ee_public_key        = NULL,
+           otp_code               = NULL,
+           otp_expires_at         = NULL,
+           otp_request_count      = 0,
+           otp_blocked_until      = NULL,
+           refresh_token_hash     = NULL,
+           is_online              = FALSE,
+           deletion_requested_at  = NULL,
+           deleted_at             = NOW(),
+           updated_at             = NOW()
+         WHERE id = $1`,
+        [userId, `deleted-${userId}@deleted.goseen.app`],
+      );
+
+      await client.query('DELETE FROM device_sessions WHERE user_id = $1', [userId]);
+      await client.query('DELETE FROM stories WHERE user_id = $1', [userId]);
+      await client.query(
+        'DELETE FROM connections WHERE follower_id = $1 OR following_id = $1',
+        [userId],
+      );
+      await client.query(
+        'DELETE FROM blocked_users WHERE blocker_id = $1 OR blocked_id = $1',
+        [userId],
+      );
+      await client.query('DELETE FROM chat_members WHERE user_id = $1', [userId]);
+      await client.query(
+        `UPDATE posts SET is_hidden = TRUE WHERE payload->>'authorUid' = $1::text`,
+        [userId],
+      );
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
   }
 

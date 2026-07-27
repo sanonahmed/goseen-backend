@@ -432,6 +432,16 @@ export const MIGRATIONS: string[] = [
   // ── Channel-attributed posts ───────────────────────────────────────────────
   // Nullable: only set when the post was published via a channel's compose bar.
   `ALTER TABLE posts ADD COLUMN IF NOT EXISTS channel_id UUID REFERENCES chats(id) ON DELETE SET NULL`,
+
+  // ── Account deletion ───────────────────────────────────────────────────────
+  // deletion_requested_at: set when the user requests deletion, starting a
+  // 7-day grace period; cleared if they log back in before it elapses (which
+  // cancels the deletion). NULL means no deletion is pending.
+  // deleted_at: set once the grace period has elapsed and the account has
+  // actually been anonymized. The row itself is kept (not hard deleted) since
+  // messages/posts/etc. from other users still reference it.
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS deletion_requested_at TIMESTAMPTZ`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
 ];
 
 export const DROP_SCHEMA = `
