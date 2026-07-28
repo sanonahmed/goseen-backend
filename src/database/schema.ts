@@ -442,6 +442,21 @@ export const MIGRATIONS: string[] = [
   // messages/posts/etc. from other users still reference it.
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS deletion_requested_at TIMESTAMPTZ`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+
+  // ── Polls ──────────────────────────────────────────────────────────────────
+  // The poll definition itself (question = posts.payload.caption, options,
+  // optional expiry) lives in posts.payload->'poll' as JSONB — no schema
+  // change needed for that. Votes need per-user relational tracking so they
+  // get a real table; one row per (post, user) — voting again just moves
+  // the same row via the ON CONFLICT upsert in PostsService.votePoll.
+  `CREATE TABLE IF NOT EXISTS poll_votes (
+    post_id      TEXT        NOT NULL,
+    user_id      UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    option_index INT         NOT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (post_id, user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_poll_votes_post ON poll_votes (post_id)`,
 ];
 
 export const DROP_SCHEMA = `

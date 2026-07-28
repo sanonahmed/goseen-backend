@@ -12,7 +12,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { IsString, IsArray, IsOptional, MinLength } from 'class-validator';
+import { IsString, IsArray, IsOptional, IsInt, IsNumber, MinLength } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PostsService } from './posts.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -35,6 +35,20 @@ class CreatePostDto {
   @IsOptional()
   @IsString()
   channel_id?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  poll_options?: string[];
+
+  @IsOptional()
+  @IsNumber()
+  poll_duration_hours?: number;
+}
+
+class VotePollDto {
+  @IsInt()
+  option_index!: number;
 }
 
 class EditPostDto {
@@ -151,6 +165,15 @@ export class PostsController {
     }
 
     return result;
+  }
+
+  @Post(':postId/poll/vote')
+  async votePoll(
+    @Request() req: any,
+    @Param('postId') postId: string,
+    @Body() dto: VotePollDto,
+  ) {
+    return this.postsService.votePoll(postId, req.user.id, dto.option_index);
   }
 
   @Post(':postId/bookmark')

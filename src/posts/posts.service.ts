@@ -1,4 +1,10 @@
-import { Injectable, Inject, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Inject,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { Pool } from 'pg';
 import { DB_POOL } from '../database/database.module';
 
@@ -24,6 +30,7 @@ const POST_SELECT = `
     (SELECT COUNT(*) FROM messages m WHERE m.type = 'post_share' AND m.metadata->>'post_id' = p.id::text AND m.is_deleted = FALSE)::int AS shares_count,
     p.comment_permission,
     p.privacy,
+    payload->'poll' AS poll,
     CASE WHEN ch.id IS NOT NULL THEN
       json_build_object('id', ch.id, 'name', ch.name, 'avatar_url', ch.avatar_url)
     END AS channel
@@ -43,6 +50,9 @@ export class PostsService {
         EXISTS(
           SELECT 1 FROM post_bookmarks pb WHERE pb.post_id = p.id AND pb.user_id = $1
         ) AS is_bookmarked,
+        (
+          SELECT option_index FROM poll_votes pv WHERE pv.post_id = p.id AND pv.user_id = $1
+        ) AS my_vote,
         (
           SELECT status FROM connections
           WHERE follower_id = $1 AND following_id = u.id
@@ -84,7 +94,7 @@ export class PostsService {
       LIMIT $2 OFFSET $3`,
       [userId, limit, offset],
     );
-    return rows;
+    return this._attachPollTallies(rows);
   }
 
   async getPostsByUser(authorId: string, viewerId: string, page = 1, limit = 20) {
@@ -97,6 +107,9 @@ export class PostsService {
         EXISTS(
           SELECT 1 FROM post_bookmarks pb WHERE pb.post_id = p.id AND pb.user_id = $2
         ) AS is_bookmarked,
+        (
+          SELECT option_index FROM poll_votes pv WHERE pv.post_id = p.id AND pv.user_id = $2
+        ) AS my_vote,
         json_build_object(
           'id',           u.id::text,
           'display_name', u.display_name,
@@ -123,7 +136,7 @@ export class PostsService {
       LIMIT $3 OFFSET $4`,
       [authorId, viewerId, limit, offset],
     );
-    return rows;
+    return this._attachPollTallies(rows);
   }
 
   async getHashtagFeed(tag: string, userId: string, page: number, limit: number) {
@@ -136,6 +149,9 @@ export class PostsService {
         EXISTS(
           SELECT 1 FROM post_bookmarks pb WHERE pb.post_id = p.id AND pb.user_id = $1
         ) AS is_bookmarked,
+        (
+          SELECT option_index FROM poll_votes pv WHERE pv.post_id = p.id AND pv.user_id = $1
+        ) AS my_vote,
         (
           SELECT status FROM connections
           WHERE follower_id = $1 AND following_id = u.id
@@ -168,7 +184,7 @@ export class PostsService {
       LIMIT $3 OFFSET $4`,
       [userId, tag, limit, offset],
     );
-    return rows;
+    return this._attachPollTallies(rows);
   }
 
   async getPost(postId: string, userId: string) {
@@ -180,6 +196,9 @@ export class PostsService {
         EXISTS(
           SELECT 1 FROM post_bookmarks pb WHERE pb.post_id = p.id AND pb.user_id = $1
         ) AS is_bookmarked,
+        (
+          SELECT option_index FROM poll_votes pv WHERE pv.post_id = p.id AND pv.user_id = $1
+        ) AS my_vote,
         (
           SELECT status FROM connections
           WHERE follower_id = $1 AND following_id = u.id
@@ -198,7 +217,8 @@ export class PostsService {
       [userId, postId],
     );
     if (!rows[0]) throw new NotFoundException('Post not found');
-    return rows[0];
+    const [post] = await this._attachPollTallies(rows);
+    return post;
   }
 
   async toggleLike(postId: string, userId: string) {
@@ -260,6 +280,9 @@ export class PostsService {
         ) AS is_liked,
         TRUE AS is_bookmarked,
         (
+          SELECT option_index FROM poll_votes pv WHERE pv.post_id = p.id AND pv.user_id = $1
+        ) AS my_vote,
+        (
           SELECT status FROM connections
           WHERE follower_id = $1 AND following_id = u.id
         ) AS connection_status,
@@ -279,7 +302,7 @@ export class PostsService {
       LIMIT $2 OFFSET $3`,
       [userId, limit, offset],
     );
-    return rows;
+    return this._attachPollTallies(rows);
   }
 
   async searchPosts(query: string, userId: string, page: number, limit: number) {
@@ -295,6 +318,9 @@ export class PostsService {
         EXISTS(
           SELECT 1 FROM post_bookmarks pb WHERE pb.post_id = p.id AND pb.user_id = $1
         ) AS is_bookmarked,
+        (
+          SELECT option_index FROM poll_votes pv WHERE pv.post_id = p.id AND pv.user_id = $1
+        ) AS my_vote,
         (
           SELECT status FROM connections
           WHERE follower_id = $1 AND following_id = u.id
@@ -325,7 +351,7 @@ export class PostsService {
       LIMIT $4 OFFSET $5`,
       [userId, ilike, tagTerm, limit, offset],
     );
-    return rows;
+    return this._attachPollTallies(rows);
   }
 
   async getPostInfo(postId: string): Promise<{ authorId: string; authorName: string } | null> {
@@ -456,7 +482,14 @@ export class PostsService {
 
   async createPost(
     userId: string,
-    data: { text?: string; media_urls?: string[]; media_type?: string; channel_id?: string },
+    data: {
+      text?: string;
+      media_urls?: string[];
+      media_type?: string;
+      channel_id?: string;
+      poll_options?: string[];
+      poll_duration_hours?: number;
+    },
   ) {
     const { rows: user } = await this.pool.query(
       `SELECT id, username, display_name, avatar_url FROM users WHERE id = $1`,
@@ -466,6 +499,7 @@ export class PostsService {
     const u = user[0];
 
     const hashtags = (data.text?.match(/#(\w+)/g) ?? []).map((h: string) => h.slice(1));
+    const poll = this._buildPollPayload(data.poll_options, data.poll_duration_hours);
     const payload = {
       authorUid: userId,
       authorUsername: u.username ?? '',
@@ -477,6 +511,7 @@ export class PostsService {
       likedBy: [],
       commentCount: 0,
       hashtags,
+      ...(poll ? { poll } : {}),
     };
 
     const now = Date.now();
@@ -487,6 +522,111 @@ export class PostsService {
       [now, JSON.stringify(payload), data.channel_id ?? null],
     );
     return this.getPost(rows[0].id, userId);
+  }
+
+  // ── Polls ──────────────────────────────────────────────────────────────────
+
+  private _buildPollPayload(
+    rawOptions?: string[],
+    durationHours?: number,
+  ): { options: string[]; expiresAt: number | null } | null {
+    if (!rawOptions || rawOptions.length === 0) return null;
+
+    const options = rawOptions.map((o) => o.trim()).filter((o) => o.length > 0);
+    if (options.length < 2) {
+      throw new BadRequestException('A poll needs at least 2 options');
+    }
+    if (options.length > 8) {
+      throw new BadRequestException('A poll can have at most 8 options');
+    }
+    if (options.some((o) => o.length > 80)) {
+      throw new BadRequestException('Poll options must be 80 characters or fewer');
+    }
+
+    const expiresAt =
+      durationHours && durationHours > 0
+        ? Date.now() + durationHours * 60 * 60 * 1000
+        : null;
+
+    return { options, expiresAt };
+  }
+
+  /** Batches vote-count lookups for every poll post in [rows] and attaches
+   *  the tallies + total, matching option order. Mutates and returns [rows]. */
+  private async _attachPollTallies(rows: any[]) {
+    const pollRows = rows.filter((r) => r.poll);
+    if (!pollRows.length) return rows;
+
+    const postIds = pollRows.map((r) => r.id);
+    const { rows: tallyRows } = await this.pool.query(
+      `SELECT post_id, option_index, COUNT(*)::int AS cnt
+       FROM poll_votes
+       WHERE post_id = ANY($1)
+       GROUP BY post_id, option_index`,
+      [postIds],
+    );
+
+    const tallyByPost = new Map<string, Map<number, number>>();
+    for (const t of tallyRows) {
+      if (!tallyByPost.has(t.post_id)) tallyByPost.set(t.post_id, new Map());
+      tallyByPost.get(t.post_id)!.set(t.option_index, t.cnt);
+    }
+
+    for (const row of pollRows) {
+      const options: string[] = row.poll.options ?? [];
+      const tallies = tallyByPost.get(row.id) ?? new Map<number, number>();
+      const counts = options.map((_, i) => tallies.get(i) ?? 0);
+      row.poll = {
+        options,
+        counts,
+        total_votes: counts.reduce((a: number, b: number) => a + b, 0),
+        expires_at: row.poll.expiresAt ?? null,
+        my_vote: row.my_vote ?? null,
+      };
+    }
+    return rows;
+  }
+
+  async votePoll(postId: string, userId: string, optionIndex: number) {
+    const { rows } = await this.pool.query(
+      `SELECT payload->'poll' AS poll FROM posts WHERE id = $1 AND is_hidden = false`,
+      [postId],
+    );
+    const poll = rows[0]?.poll;
+    if (!poll) throw new NotFoundException('This post has no poll');
+
+    const options: string[] = poll.options ?? [];
+    if (!Number.isInteger(optionIndex) || optionIndex < 0 || optionIndex >= options.length) {
+      throw new BadRequestException('Invalid poll option');
+    }
+    if (poll.expiresAt && Date.now() > Number(poll.expiresAt)) {
+      throw new ForbiddenException('This poll has ended');
+    }
+
+    await this.pool.query(
+      `INSERT INTO poll_votes (post_id, user_id, option_index)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (post_id, user_id)
+       DO UPDATE SET option_index = EXCLUDED.option_index, created_at = NOW()`,
+      [postId, userId, optionIndex],
+    );
+
+    const { rows: tallyRows } = await this.pool.query(
+      `SELECT option_index, COUNT(*)::int AS cnt FROM poll_votes WHERE post_id = $1 GROUP BY option_index`,
+      [postId],
+    );
+    const tallies = new Map<number, number>(
+      tallyRows.map((t: any) => [t.option_index, t.cnt]),
+    );
+    const counts = options.map((_, i) => tallies.get(i) ?? 0);
+
+    return {
+      options,
+      counts,
+      total_votes: counts.reduce((a, b) => a + b, 0),
+      expires_at: poll.expiresAt ?? null,
+      my_vote: optionIndex,
+    };
   }
 
   async deletePost(postId: string, userId: string) {
